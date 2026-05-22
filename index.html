@@ -156,6 +156,41 @@ th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
 .pager button:hover{background:var(--surface2)}
 .pager button:disabled{opacity:.4;cursor:default}
 .hidden{display:none!important}
+
+/* AUTH */
+.auth-overlay{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center}
+.auth-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:32px;width:360px;max-width:90vw}
+.auth-logo{display:flex;align-items:center;gap:8px;font-size:16px;font-weight:600;margin-bottom:24px}
+.auth-field{margin-bottom:14px}
+.auth-field label{display:block;font-size:12px;color:var(--text2);margin-bottom:5px;font-weight:500}
+.auth-field input{width:100%;padding:9px 12px;border:1px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;outline:none;background:var(--surface);color:var(--text)}
+.auth-field input:focus{border-color:var(--purple-m)}
+.auth-err{font-size:12px;color:var(--coral);margin-bottom:12px;display:none}
+/* USER MENU */
+.user-menu{position:relative}
+.user-btn{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--surface);cursor:pointer;font-size:13px;font-family:inherit;color:var(--text)}
+.user-btn:hover{background:var(--surface2)}
+.user-dropdown{position:absolute;top:calc(100% + 6px);right:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);min-width:180px;z-index:500;box-shadow:0 4px 16px rgba(0,0,0,.1);display:none}
+.user-dropdown.open{display:block}
+.user-dropdown a{display:block;padding:9px 14px;font-size:13px;color:var(--text);cursor:pointer;transition:background .1s}
+.user-dropdown a:hover{background:var(--surface2)}
+.user-dropdown .sep{border-top:1px solid var(--border);margin:4px 0}
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1000;display:none;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal-box{background:var(--surface);border-radius:var(--rl);padding:24px;width:400px;max-width:90vw}
+.modal-title{font-size:15px;font-weight:600;margin-bottom:16px}
+.modal-field{margin-bottom:12px}
+.modal-field label{display:block;font-size:12px;color:var(--text2);margin-bottom:4px}
+.modal-field input{width:100%;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--r);font-size:13px;font-family:inherit;outline:none;background:var(--surface);color:var(--text)}
+.modal-field input:focus{border-color:var(--purple-m)}
+.modal-err{font-size:12px;color:var(--coral);margin-bottom:8px;min-height:16px}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.user-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+.user-table th,.user-table td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:left}
+.user-table th{font-size:11px;color:var(--text2);font-weight:500;text-transform:uppercase}
+.badge-admin{background:var(--purple-l);color:var(--purple);padding:2px 8px;border-radius:99px;font-size:11px;font-weight:500}
+.badge-user{background:var(--surface2);color:var(--text2);padding:2px 8px;border-radius:99px;font-size:11px}
 </style>
 </head>
 <body>
@@ -178,6 +213,17 @@ th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
     <div style="width:1px;height:24px;background:var(--border);margin:0 2px"></div>
     <button class="btn btn-sm" onclick="saveJSON()" id="btn-save" style="display:none">💾 Lưu JSON</button>
     <button class="btn btn-sm" onclick="showDriveModal()" id="btn-drive" style="display:none;background:var(--purple-l);color:var(--purple);border-color:var(--purple-m)">☁️ Drive</button>
+    <div class="user-menu" id="user-menu" style="display:none">
+      <button class="user-btn" onclick="toggleUserMenu()">
+        <span id="user-display">👤</span> ▾
+      </button>
+      <div class="user-dropdown" id="user-dropdown">
+        <a onclick="openModal('modal-chpw');toggleUserMenu()">🔑 Đổi mật khẩu</a>
+        <a id="admin-link" style="display:none" onclick="openUserMgmt();toggleUserMenu()">👥 Quản lý tài khoản</a>
+        <div class="sep"></div>
+        <a onclick="doLogout()" style="color:var(--coral)">🚪 Đăng xuất</a>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -922,7 +968,262 @@ async function fetchFromDrive(){
     ds.style.color='var(--coral)';ds.textContent='❌ Lỗi: '+err.message;
   }
 }
+
+// ── AUTH ──────────────────────────────────────────────────────────────────────
+// Default accounts stored in localStorage (hashed passwords)
+const STORAGE_KEY = 'cfs_users';
+let currentUser = null;
+let resetTargetUser = null;
+
+async function sha256(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+function getUsers() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch(e) {}
+  return null;
+}
+
+async function initUsers() {
+  if (!getUsers()) {
+    // Create default admin account
+    const hash = await sha256('admin123');
+    const users = [{ username: 'admin', hash, isAdmin: true }];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
+  }
+}
+
+function saveUsers(users) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
+}
+
+async function doLogin() {
+  const username = document.getElementById('auth-user').value.trim();
+  const password = document.getElementById('auth-pass').value;
+  if (!username || !password) return;
+  const users = getUsers() || [];
+  const hash = await sha256(password);
+  const user = users.find(u => u.username === username && u.hash === hash);
+  if (!user) {
+    document.getElementById('auth-err').style.display = 'block';
+    return;
+  }
+  currentUser = user;
+  document.getElementById('auth-overlay').style.display = 'none';
+  document.getElementById('user-menu').style.display = '';
+  document.getElementById('user-display').textContent = '👤 ' + user.username;
+  if (user.isAdmin) {
+    document.getElementById('admin-link').style.display = '';
+  }
+}
+
+function doLogout() {
+  currentUser = null;
+  document.getElementById('auth-overlay').style.display = 'flex';
+  document.getElementById('user-menu').style.display = 'none';
+  document.getElementById('user-dropdown').classList.remove('open');
+  document.getElementById('auth-user').value = '';
+  document.getElementById('auth-pass').value = '';
+  document.getElementById('auth-err').style.display = 'none';
+}
+
+function toggleUserMenu() {
+  document.getElementById('user-dropdown').classList.toggle('open');
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('.user-menu')) {
+    document.getElementById('user-dropdown')?.classList.remove('open');
+  }
+});
+
+// Enter key on login
+document.addEventListener('DOMContentLoaded', async () => {
+  await initUsers();
+  ['auth-user','auth-pass'].forEach(id => {
+    document.getElementById(id).addEventListener('keydown', e => {
+      if (e.key === 'Enter') doLogin();
+    });
+  });
+});
+
+// CHANGE PASSWORD
+async function doChangePw() {
+  const oldPw = document.getElementById('chpw-old').value;
+  const newPw = document.getElementById('chpw-new').value;
+  const confirm = document.getElementById('chpw-confirm').value;
+  const errEl = document.getElementById('chpw-err');
+  errEl.textContent = '';
+  if (!oldPw || !newPw || !confirm) { errEl.textContent = 'Vui lòng điền đầy đủ'; return; }
+  if (newPw !== confirm) { errEl.textContent = 'Mật khẩu mới không khớp'; return; }
+  if (newPw.length < 6) { errEl.textContent = 'Mật khẩu tối thiểu 6 ký tự'; return; }
+  const oldHash = await sha256(oldPw);
+  if (oldHash !== currentUser.hash) { errEl.textContent = 'Mật khẩu hiện tại không đúng'; return; }
+  const newHash = await sha256(newPw);
+  const users = getUsers();
+  const idx = users.findIndex(u => u.username === currentUser.username);
+  users[idx].hash = newHash;
+  currentUser.hash = newHash;
+  saveUsers(users);
+  closeModal('modal-chpw');
+  showStatus('ok', 'Đã đổi mật khẩu thành công');
+}
+
+// USER MANAGEMENT (admin only)
+function openUserMgmt() {
+  renderUserTable();
+  openModal('modal-users');
+}
+function renderUserTable() {
+  const users = getUsers() || [];
+  const tbody = document.getElementById('user-table-body');
+  tbody.innerHTML = users.map(u => `
+    <tr>
+      <td style="font-weight:500">${u.username}</td>
+      <td>${u.isAdmin ? '<span class="badge-admin">Admin</span>' : '<span class="badge-user">User</span>'}</td>
+      <td style="display:flex;gap:6px">
+        ${u.username !== currentUser.username ? `
+          <button class="btn btn-sm" style="font-size:11px;padding:3px 8px" onclick="openReset('${u.username}')">Reset PW</button>
+          ${!u.isAdmin || users.filter(x=>x.isAdmin).length > 1 ? `<button class="btn btn-sm" style="font-size:11px;padding:3px 8px;color:var(--coral)" onclick="deleteUser('${u.username}')">Xóa</button>` : ''}
+        ` : '<span style="font-size:11px;color:var(--text3)">Tài khoản hiện tại</span>'}
+      </td>
+    </tr>
+  `).join('');
+}
+async function doAddUser() {
+  const username = document.getElementById('new-user-name').value.trim();
+  const password = document.getElementById('new-user-pass').value;
+  const isAdmin = document.getElementById('new-user-admin').checked;
+  const errEl = document.getElementById('new-user-err');
+  errEl.textContent = '';
+  if (!username || !password) { errEl.textContent = 'Vui lòng điền đầy đủ'; return; }
+  if (password.length < 6) { errEl.textContent = 'Mật khẩu tối thiểu 6 ký tự'; return; }
+  const users = getUsers() || [];
+  if (users.find(u => u.username === username)) { errEl.textContent = 'Username đã tồn tại'; return; }
+  const hash = await sha256(password);
+  users.push({ username, hash, isAdmin });
+  saveUsers(users);
+  document.getElementById('new-user-name').value = '';
+  document.getElementById('new-user-pass').value = '';
+  document.getElementById('new-user-admin').checked = false;
+  renderUserTable();
+  showStatus('ok', `Đã thêm tài khoản: ${username}`);
+}
+function deleteUser(username) {
+  if (!confirm(`Xóa tài khoản "${username}"?`)) return;
+  const users = getUsers().filter(u => u.username !== username);
+  saveUsers(users);
+  renderUserTable();
+}
+function openReset(username) {
+  resetTargetUser = username;
+  document.getElementById('reset-username').textContent = username;
+  document.getElementById('reset-pass').value = '';
+  document.getElementById('reset-err').textContent = '';
+  closeModal('modal-users');
+  openModal('modal-reset');
+}
+async function doResetPw() {
+  const newPw = document.getElementById('reset-pass').value;
+  const errEl = document.getElementById('reset-err');
+  if (!newPw || newPw.length < 6) { errEl.textContent = 'Mật khẩu tối thiểu 6 ký tự'; return; }
+  const hash = await sha256(newPw);
+  const users = getUsers();
+  const idx = users.findIndex(u => u.username === resetTargetUser);
+  users[idx].hash = hash;
+  saveUsers(users);
+  closeModal('modal-reset');
+  openModal('modal-users');
+  renderUserTable();
+  showStatus('ok', `Đã reset mật khẩu cho: ${resetTargetUser}`);
+}
+
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+  // Clear inputs
+  document.querySelectorAll(`#${id} input`).forEach(i => i.value = '');
+  const err = document.querySelector(`#${id} .modal-err`);
+  if (err) err.textContent = '';
+}
+
 function showStatus(type,msg){const s=document.getElementById('sbar');s.className='sbar '+type;s.innerHTML=`<div class="sdot"></div>${msg}`;s.classList.remove('hidden');}
 </script>
+
+<!-- AUTH OVERLAY -->
+<div class="auth-overlay" id="auth-overlay">
+  <div class="auth-card">
+    <div class="auth-logo"><div class="logo-dot"></div>CFS Sản Lượng</div>
+    <div class="auth-field">
+      <label>Tên đăng nhập</label>
+      <input type="text" id="auth-user" placeholder="username" autocomplete="username">
+    </div>
+    <div class="auth-field">
+      <label>Mật khẩu</label>
+      <input type="password" id="auth-pass" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <div class="auth-err" id="auth-err">Tên đăng nhập hoặc mật khẩu không đúng</div>
+    <button class="btn btn-purple" style="width:100%;padding:10px" onclick="doLogin()">Đăng nhập</button>
+  </div>
+</div>
+
+<!-- CHANGE PASSWORD MODAL -->
+<div class="modal-overlay" id="modal-chpw">
+  <div class="modal-box">
+    <div class="modal-title">🔑 Đổi mật khẩu</div>
+    <div class="modal-field"><label>Mật khẩu hiện tại</label><input type="password" id="chpw-old" placeholder="••••••••"></div>
+    <div class="modal-field"><label>Mật khẩu mới</label><input type="password" id="chpw-new" placeholder="••••••••"></div>
+    <div class="modal-field"><label>Xác nhận mật khẩu mới</label><input type="password" id="chpw-confirm" placeholder="••••••••"></div>
+    <div class="modal-err" id="chpw-err"></div>
+    <div class="modal-actions">
+      <button class="btn btn-sm" onclick="closeModal('modal-chpw')">Hủy</button>
+      <button class="btn btn-sm btn-purple" onclick="doChangePw()">Lưu</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADMIN: USER MANAGEMENT MODAL -->
+<div class="modal-overlay" id="modal-users">
+  <div class="modal-box" style="width:520px">
+    <div class="modal-title">👥 Quản lý tài khoản</div>
+    <table class="user-table">
+      <thead><tr><th>Username</th><th>Vai trò</th><th>Thao tác</th></tr></thead>
+      <tbody id="user-table-body"></tbody>
+    </table>
+    <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+      <div style="font-size:13px;font-weight:500;margin-bottom:10px">Thêm tài khoản mới</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div class="modal-field" style="margin:0"><label>Username</label><input type="text" id="new-user-name" placeholder="username"></div>
+        <div class="modal-field" style="margin:0"><label>Mật khẩu</label><input type="password" id="new-user-pass" placeholder="••••••••"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <label style="font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="new-user-admin"> Admin
+        </label>
+      </div>
+      <div class="modal-err" id="new-user-err"></div>
+      <button class="btn btn-sm btn-teal" onclick="doAddUser()">+ Thêm tài khoản</button>
+    </div>
+    <div class="modal-actions"><button class="btn btn-sm" onclick="closeModal('modal-users')">Đóng</button></div>
+  </div>
+</div>
+
+<!-- ADMIN: RESET PASSWORD MODAL -->
+<div class="modal-overlay" id="modal-reset">
+  <div class="modal-box">
+    <div class="modal-title">🔄 Reset mật khẩu</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Reset mật khẩu cho: <strong id="reset-username"></strong></div>
+    <div class="modal-field"><label>Mật khẩu mới</label><input type="password" id="reset-pass" placeholder="••••••••"></div>
+    <div class="modal-err" id="reset-err"></div>
+    <div class="modal-actions">
+      <button class="btn btn-sm" onclick="closeModal('modal-reset')">Hủy</button>
+      <button class="btn btn-sm btn-purple" onclick="doResetPw()">Reset</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
