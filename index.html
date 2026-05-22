@@ -370,14 +370,17 @@ function processExcel(raw,fname){
     const inDate=parseDate(r['In Date']),outDate=parseDate(r['Out Date']);
     const inUser=(r['In User']||r['In Uer']||'').toString().trim()||null,outUser=(r['Out Uer']||r['Out User']||'').toString().trim()||null;
     const ex=db[pm];
-    if(!ex){db[pm]={inTally,inTallyTime,outTally,outTallyTime,inUser,inDate,outUser,outDate,cbm};added++;}
+    // Store with short keys to reduce JSON size
+    const trimDt=d=>d?new Date(d).toISOString().slice(0,16):null;
+    if(!ex){db[pm]={it:inTally,ii:trimDt(inTallyTime),ot:outTally,oi:trimDt(outTallyTime),iu:inUser,id:trimDt(inDate),ou:outUser,od:trimDt(outDate),c:cbm};added++;}
     else{
       let ch=false;
-      if(!ex.outTallyTime&&outTallyTime){ex.outTallyTime=outTallyTime;ch=true;}
-      if(!ex.outTally&&outTally){ex.outTally=outTally;ch=true;}
-      if(!ex.outDate&&outDate){ex.outDate=outDate;ch=true;}
-      if(!ex.outUser&&outUser){ex.outUser=outUser;ch=true;}
-      if(cbm&&cbm!==ex.cbm){ex.cbm=cbm;ch=true;}
+      const trimDt2=d=>d?new Date(d).toISOString().slice(0,16):null;
+      if(!ex.oi&&!ex.outTallyTime&&outTallyTime){ex.oi=trimDt2(outTallyTime);ch=true;}
+      if(!ex.ot&&!ex.outTally&&outTally){ex.ot=outTally;ch=true;}
+      if(!ex.od&&!ex.outDate&&outDate){ex.od=trimDt2(outDate);ch=true;}
+      if(!ex.ou&&!ex.outUser&&outUser){ex.ou=outUser;ch=true;}
+      if(cbm&&cbm!==(ex.c||ex.cbm)){ex.c=cbm;ch=true;}
       if(ch)updated++;else skipped++;
     }
   });
@@ -400,18 +403,27 @@ function fmtDt(v){if(!v)return'<span class="ce">—</span>';const d=parseDate(v)
 function buildEvents(yearFilter,monthFilter){
   const events=[];
   Object.entries(db).forEach(([pm,rec])=>{
-    const cbm=rec.cbm||0;
-    if(rec.inTally&&rec.inTallyTime){const d=parseDate(rec.inTallyTime);if(d&&yearOk(d,yearFilter,monthFilter))events.push({date:d,type:'IN',role:'Tally',person:rec.inTally,cbm});}
-    if(rec.outTally&&rec.outTallyTime){const d=parseDate(rec.outTallyTime);if(d&&yearOk(d,yearFilter,monthFilter))events.push({date:d,type:'OUT',role:'Tally',person:rec.outTally,cbm});}
-    if(rec.inUser&&rec.inDate){const d=parseDate(rec.inDate);if(d&&yearOk(d,yearFilter,monthFilter))events.push({date:d,type:'IN',role:'Forklift',person:rec.inUser,cbm});}
-    if(rec.outUser&&rec.outDate){const d=parseDate(rec.outDate);if(d&&yearOk(d,yearFilter,monthFilter))events.push({date:d,type:'OUT',role:'Forklift',person:rec.outUser,cbm});}
+    // Support both old (long) and new (short) keys
+    const cbm=rec.c||rec.cbm||0;
+    const inTally=rec.it||rec.inTally;
+    const inTallyTime=rec.ii||rec.inTallyTime;
+    const outTally=rec.ot||rec.outTally;
+    const outTallyTime=rec.oi||rec.outTallyTime;
+    const inUser=rec.iu||rec.inUser;
+    const inDate=rec.id||rec.inDate;
+    const outUser=rec.ou||rec.outUser;
+    const outDate=rec.od||rec.outDate;
+    if(inTally&&inTallyTime){const d=parseDate(inTallyTime);if(d&&yearOk(d,yearFilter,monthFilter))events.push({date:d,type:'IN',role:'Tally',person:inTally,cbm});}
+    if(outTally&&outTallyTime){const d=parseDate(outTallyTime);if(d&&yearOk(d,yearFilter,monthFilter))events.push({date:d,type:'OUT',role:'Tally',person:outTally,cbm});}
+    if(inUser&&inDate){const d=parseDate(inDate);if(d&&yearOk(d,yearFilter,monthFilter))events.push({date:d,type:'IN',role:'Forklift',person:inUser,cbm});}
+    if(outUser&&outDate){const d=parseDate(outDate);if(d&&yearOk(d,yearFilter,monthFilter))events.push({date:d,type:'OUT',role:'Forklift',person:outUser,cbm});}
   });
   return events;
 }
 function yearOk(d,year,month){if(d.getFullYear()!==year)return false;if(month!=='all'&&d.getMonth()+1!==month)return false;return true;}
 function getStatus(rec){
-  const hti=rec.inTally&&rec.inTallyTime,hto=rec.outTally&&rec.outTallyTime;
-  const hfi=rec.inUser&&rec.inDate,hfo=rec.outUser&&rec.outDate;
+  const hti=(rec.it||rec.inTally)&&(rec.ii||rec.inTallyTime),hto=(rec.ot||rec.outTally)&&(rec.oi||rec.outTallyTime);
+  const hfi=(rec.iu||rec.inUser)&&(rec.id||rec.inDate),hfo=(rec.ou||rec.outUser)&&(rec.od||rec.outDate);
   const anyIn=hti||hfi,anyOut=hto||hfo;
   if(anyIn&&anyOut)return'full';if(anyIn&&!anyOut)return'in-only';if(!anyIn&&anyOut)return'out-only';return'empty';
 }
@@ -699,11 +711,11 @@ function renderDetailPage(){
     h+=`<tr style="${bg}">
       <td style="font-family:monospace;font-size:11px">${pm}</td>
       <td>${statusLabel(s)}</td>
-      <td style="text-align:right">${rec.cbm?rec.cbm.toFixed(2):'—'}</td>
-      <td>${rec.inTally||'<span class="ce">—</span>'}</td><td>${fmtDt(rec.inTallyTime)}</td>
-      <td>${rec.outTally||'<span class="ce">—</span>'}</td><td>${fmtDt(rec.outTallyTime)}</td>
-      <td>${rec.inUser||'<span class="ce">—</span>'}</td><td>${fmtDt(rec.inDate)}</td>
-      <td>${rec.outUser||'<span class="ce">—</span>'}</td><td>${fmtDt(rec.outDate)}</td>
+      <td style="text-align:right">${(rec.c||rec.cbm)?(rec.c||rec.cbm).toFixed(2):'—'}</td>
+      <td>${rec.it||rec.inTally||'<span class="ce">—</span>'}</td><td>${fmtDt(rec.ii||rec.inTallyTime)}</td>
+      <td>${rec.ot||rec.outTally||'<span class="ce">—</span>'}</td><td>${fmtDt(rec.oi||rec.outTallyTime)}</td>
+      <td>${rec.iu||rec.inUser||'<span class="ce">—</span>'}</td><td>${fmtDt(rec.id||rec.inDate)}</td>
+      <td>${rec.ou||rec.outUser||'<span class="ce">—</span>'}</td><td>${fmtDt(rec.od||rec.outDate)}</td>
     </tr>`;
   });
   document.getElementById('dtbody').innerHTML=h;
@@ -789,7 +801,7 @@ function exportDetailExcel(){
   filteredRows.forEach(([pm,rec])=>{
     const s=getStatus(rec);
     const label=s==='full'?'Đủ IN+OUT':s==='in-only'?'Chờ OUT':s==='out-only'?'Thiếu IN':'Trống';
-    rows.push([pm,label,rec.cbm||0,rec.inTally||'',fdt(rec.inTallyTime),rec.outTally||'',fdt(rec.outTallyTime),rec.inUser||'',fdt(rec.inDate),rec.outUser||'',fdt(rec.outDate)]);
+    rows.push([pm,label,(rec.c||rec.cbm)||0,rec.it||rec.inTally||'',fdt(rec.ii||rec.inTallyTime),rec.ot||rec.outTally||'',fdt(rec.oi||rec.outTallyTime),rec.iu||rec.inUser||'',fdt(rec.id||rec.inDate),rec.ou||rec.outUser||'',fdt(rec.od||rec.outDate)]);
   });
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Chi tiết pallet');
   XLSX.writeFile(wb,'ChiTiet_Pallet_'+new Date().toISOString().slice(0,10)+'.xlsx');
@@ -819,24 +831,43 @@ async function fetchFromGitHub(){
   }
 }
 async function parseAndLoadBytes(bytes,ds){
-  if(bytes[0]===0x1f&&bytes[1]===0x8b){
-    const ds2=new DecompressionStream('gzip');
-    const writer=ds2.writable.getWriter();
-    const reader=ds2.readable.getReader();
-    writer.write(bytes);writer.close();
-    let chunks=[];
-    function pump(){return reader.read().then(({done,value})=>{if(done)return;chunks.push(value);return pump();});}
-    await pump();
-    const decoded=new TextDecoder().decode(new Uint8Array(chunks.reduce((a,b)=>[...a,...b],[])));
-    const p=JSON.parse(decoded);db=p.db||p;
-  }else{
-    const text=new TextDecoder().decode(bytes);
-    const p=JSON.parse(text);db=p.db||p;
-  }
-  ds.style.color='var(--teal)';ds.textContent=`✅ Đã tải ${Object.keys(db).length.toLocaleString()} pallet`;
-  setTimeout(()=>hideDriveModal(),1200);
-  showStatus('ok',`Đã tải: ${Object.keys(db).length.toLocaleString()} pallet`);
-  afterDataChange();
+  ds.textContent='Đang xử lý dữ liệu...';
+  return new Promise((resolve,reject)=>{
+    const workerCode=`
+      self.onmessage=async function(e){
+        try{
+          let bytes=new Uint8Array(e.data);
+          if(bytes[0]===0x1f&&bytes[1]===0x8b){
+            const ds=new DecompressionStream('gzip');
+            const writer=ds.writable.getWriter();
+            const reader=ds.readable.getReader();
+            writer.write(bytes);writer.close();
+            let chunks=[];
+            while(true){const {done,value}=await reader.read();if(done)break;chunks.push(value);}
+            const all=new Uint8Array(chunks.reduce((a,b)=>{const c=new Uint8Array(a.length+b.length);c.set(a);c.set(b,a.length);return c;},new Uint8Array(0)));
+            bytes=all;
+          }
+          const text=new TextDecoder().decode(bytes);
+          const parsed=JSON.parse(text);
+          self.postMessage({ok:true,data:parsed});
+        }catch(err){self.postMessage({ok:false,error:err.message});}
+      };
+    `;
+    const blob=new Blob([workerCode],{type:'application/javascript'});
+    const worker=new Worker(URL.createObjectURL(blob));
+    worker.onmessage=e=>{
+      worker.terminate();
+      if(!e.data.ok){reject(new Error(e.data.error));return;}
+      const p=e.data.data;db=p.db||p;
+      ds.style.color='var(--teal)';ds.textContent=`✅ Đã tải ${Object.keys(db).length.toLocaleString()} pallet`;
+      setTimeout(()=>hideDriveModal(),1200);
+      showStatus('ok',`Đã tải: ${Object.keys(db).length.toLocaleString()} pallet`);
+      afterDataChange();
+      resolve();
+    };
+    worker.onerror=e=>{worker.terminate();reject(new Error(e.message));};
+    worker.postMessage(bytes.buffer,[bytes.buffer]);
+  });
 }
 async function fetchFromDrive(){
   const fileId=document.getElementById('drive-file-id').value.trim();
