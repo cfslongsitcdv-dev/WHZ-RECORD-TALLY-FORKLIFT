@@ -183,22 +183,28 @@ th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
 
 <!-- Drive Modal -->
 <div id="drive-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:999;align-items:center;justify-content:center">
-  <div style="background:var(--surface);border-radius:var(--rl);padding:24px;width:460px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,.2)">
-    <div style="font-size:15px;font-weight:600;margin-bottom:6px">☁️ Tải dữ liệu từ Google Drive</div>
-    <div style="font-size:12px;color:var(--text2);margin-bottom:16px">Nhập File ID từ link Google Drive của file JSON.gz</div>
-    <div style="font-size:11px;color:var(--text3);background:var(--surface2);border-radius:var(--r);padding:8px 10px;margin-bottom:12px;font-family:monospace">
-      https://drive.google.com/file/d/<span style="background:#ffe066;color:#333;padding:1px 3px;border-radius:3px">FILE_ID</span>/view
+  <div style="background:var(--surface);border-radius:var(--rl);padding:24px;width:480px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+    <div style="font-size:15px;font-weight:600;margin-bottom:6px">☁️ Tải dữ liệu mới nhất</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:16px">Tải file dữ liệu từ GitHub (tự động) hoặc thủ công từ máy tính</div>
+
+    <!-- Option 1: Auto from GitHub -->
+    <div style="background:var(--teal-l);border:1px solid var(--teal-m);border-radius:var(--r);padding:12px 14px;margin-bottom:10px">
+      <div style="font-size:12px;font-weight:600;color:var(--teal);margin-bottom:6px">⚡ Tự động — Tải từ Google Drive</div>
+      <div style="font-size:11px;color:var(--teal);margin-bottom:8px">Luôn lấy dữ liệu mới nhất từ Google Drive</div>
+      <button class="btn btn-teal btn-sm" onclick="fetchFromGitHub()" id="btn-fetch-gh" style="width:100%">⬇ Tải từ Drive</button>
     </div>
-    <input id="drive-file-id" type="text" placeholder="Dán File ID vào đây..." 
-      style="width:100%;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--r);font-size:13px;font-family:inherit;margin-bottom:8px;outline:none">
-    <div style="font-size:11px;color:var(--text3);margin-bottom:16px">
-      💡 File ID được lưu lại, lần sau chỉ cần bấm Tải mà không cần nhập lại
+
+    <!-- Option 2: Manual file -->
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px">
+      <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px">📁 Thủ công — Tải file từ máy tính</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Dùng khi không có mạng hoặc muốn load file cụ thể</div>
+      <label class="btn btn-sm" for="fi-json" style="display:block;text-align:center;cursor:pointer">📂 Chọn file JSON / JSON.gz</label>
     </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn btn-sm" onclick="hideDriveModal()">Hủy</button>
-      <button class="btn btn-sm btn-teal" onclick="fetchFromDrive()" id="btn-fetch-drive">⬇ Tải từ Drive</button>
-    </div>
+
     <div id="drive-status" style="margin-top:10px;font-size:12px;display:none"></div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+      <button class="btn btn-sm" onclick="hideDriveModal()">Đóng</button>
+    </div>
   </div>
 </div>
 
@@ -799,6 +805,48 @@ function hideDriveModal(){
   document.getElementById('drive-modal').style.display='none';
   document.getElementById('drive-status').style.display='none';
 }
+async function fetchFromGitHub(){
+  const btn=document.getElementById('btn-fetch-gh');
+  const ds=document.getElementById('drive-status');
+  btn.textContent='⏳ Đang tải...';btn.disabled=true;
+  ds.style.display='block';ds.style.color='var(--amber)';ds.textContent='Đang kết nối Google Drive...';
+  try{
+    const url='https://script.google.com/macros/s/AKfycbzZVV51scLBJQZTkNDMcr8mI4C8avDd6H_PAfRdO0_rC0o5fce5yB9uq1iLch6Q_Ac/exec?t='+Date.now();
+    const res=await fetch(url);
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const json=await res.json();
+    if(!json.ok)throw new Error(json.error||'Apps Script lỗi');
+    // Decode base64 → Uint8Array
+    const binary=atob(json.data);
+    const bytes=new Uint8Array(binary.length);
+    for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+    btn.textContent='⬇ Tải từ Drive';btn.disabled=false;
+    await parseAndLoadBytes(bytes,ds);
+  }catch(err){
+    btn.textContent='⬇ Tải từ Drive';btn.disabled=false;
+    ds.style.color='var(--coral)';ds.textContent='❌ '+err.message;
+  }
+}
+async function parseAndLoadBytes(bytes,ds){
+  if(bytes[0]===0x1f&&bytes[1]===0x8b){
+    const ds2=new DecompressionStream('gzip');
+    const writer=ds2.writable.getWriter();
+    const reader=ds2.readable.getReader();
+    writer.write(bytes);writer.close();
+    let chunks=[];
+    function pump(){return reader.read().then(({done,value})=>{if(done)return;chunks.push(value);return pump();});}
+    await pump();
+    const decoded=new TextDecoder().decode(new Uint8Array(chunks.reduce((a,b)=>[...a,...b],[])));
+    const p=JSON.parse(decoded);db=p.db||p;
+  }else{
+    const text=new TextDecoder().decode(bytes);
+    const p=JSON.parse(text);db=p.db||p;
+  }
+  ds.style.color='var(--teal)';ds.textContent=`✅ Đã tải ${Object.keys(db).length.toLocaleString()} pallet`;
+  setTimeout(()=>hideDriveModal(),1200);
+  showStatus('ok',`Đã tải: ${Object.keys(db).length.toLocaleString()} pallet`);
+  afterDataChange();
+}
 async function fetchFromDrive(){
   const fileId=document.getElementById('drive-file-id').value.trim();
   if(!fileId){alert('Vui lòng nhập File ID');return;}
@@ -810,11 +858,22 @@ async function fetchFromDrive(){
   // Use Drive direct download URL
   const url=`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=AIzaSyD-placeholder`;
   // Fallback: use export download link (works for public files)
-  const dlUrl=`https://drive.google.com/uc?export=download&id=${fileId}`;
+  // Try multiple Drive URL formats to handle CORS
+  const urls=[
+    `https://drive.google.com/uc?export=download&id=${fileId}&confirm=1`,
+    `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=1`,
+  ];
+  let buf=null;
+  let lastErr='';
+  for(const dlUrl of urls){
+    try{
+      const res=await fetch(dlUrl,{mode:'cors'});
+      if(res.ok){buf=await res.arrayBuffer();break;}
+      lastErr=`HTTP ${res.status}`;
+    }catch(e){lastErr=e.message;}
+  }
+  if(!buf)throw new Error(lastErr+' — Thử dùng nút "Tải JSON" thủ công thay thế');
   try{
-    const res=await fetch(dlUrl);
-    if(!res.ok)throw new Error(`HTTP ${res.status} — Kiểm tra file có được share public chưa`);
-    const buf=await res.arrayBuffer();
     const bytes=new Uint8Array(buf);
     btn.textContent='⬇ Tải từ Drive';btn.disabled=false;
     // Parse same as loadJSON
