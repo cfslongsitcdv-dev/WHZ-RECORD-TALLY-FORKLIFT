@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sản Lượng CFS</title>
+<title>CFS Sản Lượng</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
 :root {
@@ -19,8 +20,19 @@
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);font-size:14px;min-height:100vh}
 
+/* AUTH */
+.auth-overlay{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center}
+.auth-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:36px;width:380px;max-width:90vw;box-shadow:0 4px 24px rgba(0,0,0,.08)}
+.auth-logo{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:600;margin-bottom:8px;letter-spacing:-.02em}
+.auth-sub{font-size:13px;color:var(--text2);margin-bottom:28px}
+.auth-field{margin-bottom:14px}
+.auth-field label{display:block;font-size:12px;color:var(--text2);margin-bottom:5px;font-weight:500;text-transform:uppercase;letter-spacing:.04em}
+.auth-field input{width:100%;padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;outline:none;background:var(--surface);color:var(--text);transition:border .15s}
+.auth-field input:focus{border-color:var(--purple-m)}
+.auth-err{font-size:12px;color:var(--coral);margin-bottom:12px;min-height:16px}
+
 /* HEADER */
-.header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 20px;display:flex;align-items:center;gap:16px;height:52px;position:sticky;top:0;z-index:200}
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 20px;display:flex;align-items:center;gap:16px;height:52px;position:sticky;top:0;z-index:100}
 .logo{font-size:15px;font-weight:600;letter-spacing:-.02em;display:flex;align-items:center;gap:8px}
 .logo-dot{width:8px;height:8px;background:var(--teal-m);border-radius:50%}
 .hright{margin-left:auto;display:flex;align-items:center;gap:8px}
@@ -34,38 +46,49 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);fon
 .leg{display:flex;gap:14px;font-size:11px;color:var(--text2)}
 .legitem{display:flex;align-items:center;gap:4px}
 .legdot{width:10px;height:10px;border-radius:2px}
-.dbinfo{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--text2)}
-.dbtag{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:3px 9px;font-size:12px}
 
-/* UPLOAD — compact single row */
-.up-row{display:flex;gap:10px;margin-bottom:16px;align-items:stretch}
-.up-box{flex:1;border:1.5px dashed var(--border2);border-radius:var(--r);padding:12px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:all .2s;background:var(--surface);min-height:56px}
-.up-box:hover,.up-box.drag{border-color:var(--teal-m);background:var(--teal-l)}
-.up-box.json-box:hover,.up-box.json-box.drag{border-color:var(--purple-m);background:var(--purple-l)}
-.up-ico{font-size:22px;flex-shrink:0}
-.up-text h3{font-size:13px;font-weight:500;margin-bottom:1px}
-.up-text p{font-size:11px;color:var(--text2)}
+/* USER MENU */
+.user-menu{position:relative}
+.user-btn{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--surface);cursor:pointer;font-size:13px;font-family:inherit;color:var(--text)}
+.user-btn:hover{background:var(--surface2)}
+.user-dropdown{position:absolute;top:calc(100% + 6px);right:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);min-width:190px;z-index:500;box-shadow:0 4px 16px rgba(0,0,0,.1);display:none}
+.user-dropdown.open{display:block}
+.user-dropdown a{display:block;padding:9px 14px;font-size:13px;color:var(--text);cursor:pointer;transition:background .1s}
+.user-dropdown a:hover{background:var(--surface2)}
+.user-dropdown .sep{border-top:1px solid var(--border);margin:4px 0}
 
-/* STATUS */
-.sbar{padding:8px 14px;font-size:12px;display:flex;align-items:center;gap:8px;border-radius:var(--r);margin-bottom:14px}
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1000;display:none;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal-box{background:var(--surface);border-radius:var(--rl);padding:24px;width:420px;max-width:90vw;max-height:90vh;overflow-y:auto}
+.modal-title{font-size:15px;font-weight:600;margin-bottom:16px}
+.modal-field{margin-bottom:12px}
+.modal-field label{display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500}
+.modal-field input,.modal-field select{width:100%;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--r);font-size:13px;font-family:inherit;outline:none;background:var(--surface);color:var(--text)}
+.modal-field input:focus{border-color:var(--purple-m)}
+.modal-err{font-size:12px;color:var(--coral);min-height:16px;margin-bottom:4px}
+.modal-ok{font-size:12px;color:var(--teal);min-height:16px;margin-bottom:4px}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.user-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+.user-table th,.user-table td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:left}
+.user-table th{font-size:11px;color:var(--text2);font-weight:500;text-transform:uppercase;letter-spacing:.04em}
+.badge-admin{background:var(--purple-l);color:var(--purple);padding:2px 8px;border-radius:99px;font-size:11px;font-weight:500}
+.badge-user{background:var(--surface2);color:var(--text2);padding:2px 8px;border-radius:99px;font-size:11px}
+
+/* MAIN */
+.main{padding:20px;max-width:100%}
+.sbar{padding:9px 14px;font-size:12px;display:flex;align-items:center;gap:8px;border-radius:var(--r);margin-bottom:14px}
 .sbar.info{background:var(--amber-l);color:var(--amber);border:1px solid #f0c060}
 .sbar.ok{background:var(--teal-l);color:var(--teal);border:1px solid var(--teal-m)}
 .sbar.err{background:#fcebeb;color:#791f1f;border:1px solid #f09595}
 .sdot{width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}
-
-/* METRICS */
 .metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px}
 .metric{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:11px 13px}
 .mlabel{font-size:11px;color:var(--text3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.05em}
 .mval{font-size:20px;font-weight:600;letter-spacing:-.02em;font-family:'DM Mono',monospace}
 .msub{font-size:11px;color:var(--text3);margin-top:2px}
 .vi{color:var(--teal)}.vo{color:var(--coral)}.vt{color:var(--purple)}
-
-/* CARD */
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);overflow:hidden}
-.main{padding:20px;max-width:100%}
-
-/* TABS */
 .nav-tabs{display:flex;border-bottom:1px solid var(--border);background:var(--surface)}
 .ntab{padding:10px 16px;font-size:13px;font-weight:500;cursor:pointer;color:var(--text2);border:none;border-bottom:2px solid transparent;background:none;font-family:inherit;transition:all .15s;white-space:nowrap}
 .ntab:hover{color:var(--text)}
@@ -75,23 +98,18 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);fon
 .stab:hover{color:var(--text);background:var(--surface)}
 .stab.active{color:var(--teal);border-bottom-color:var(--teal);background:var(--surface)}
 .tab-panel{display:none}.tab-panel.active{display:block}
-
-/* CONTROLS */
 .controls{display:flex;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap;background:var(--surface)}
 .controls select{font-size:13px;padding:5px 9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface);color:var(--text);font-family:inherit;cursor:pointer}
 .cright{margin-left:auto;display:flex;gap:6px}
-
-/* PIVOT TABLE — frozen headers */
+/* PIVOT TABLE */
 .tscroll{overflow:auto;max-height:calc(100vh - 380px)}
 table{border-collapse:collapse;font-size:12px}
 th,td{border:1px solid var(--border);padding:5px 7px;white-space:nowrap}
 th{background:var(--surface2);font-weight:500;text-align:center;color:var(--text2);font-size:11px}
-/* Freeze both header rows */
 thead tr:first-child th{position:sticky;top:0;z-index:4}
 thead tr:nth-child(2) th{position:sticky;top:28px;z-index:4}
 td{text-align:right}
 td.nc{text-align:left;font-weight:500;background:var(--surface);position:sticky;left:0;z-index:3;min-width:140px;padding-left:10px;border-right:2px solid var(--border2)}
-/* corner cell: sticky top-left */
 thead tr:first-child th:first-child{position:sticky;top:0;left:0;z-index:6;background:var(--surface2)}
 thead tr:nth-child(2) th:first-child{position:sticky;top:28px;left:0;z-index:6;background:var(--surface2)}
 td.gc{text-align:left;background:var(--text);color:#fff;font-weight:600;font-size:11px;letter-spacing:.07em;position:sticky;left:0;z-index:3;padding:5px 10px;text-transform:uppercase;border-right:2px solid #444}
@@ -108,24 +126,18 @@ th.tht{background:var(--purple-l);color:var(--purple)}
 th.thp{background:var(--surface2);font-weight:600;border-right:1px solid var(--border2)}
 th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
 .ci{color:var(--teal)}.co{color:var(--coral)}.ct{color:var(--purple);font-weight:500}
-.ce{color:var(--text3)}
-.gci{color:#a8f0d8}.gco{color:#ffc4a8}
-
-/* TOP PERFORMERS */
-.top-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:14px;border-bottom:1px solid var(--border)}
+.ce{color:var(--text3)}.gci{color:#a8f0d8}.gco{color:#ffc4a8}
+/* TOP */
+.top-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:14px;border-bottom:1px solid var(--border)}
 .top-card{background:var(--surface2);border-radius:var(--r);padding:12px}
 .top-title{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px}
-.top-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px}
+.top-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px}
 .top-rank{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;flex-shrink:0}
-.r1{background:#FFD700;color:#5a4000}
-.r2{background:#C0C0C0;color:#333}
-.r3{background:#CD7F32;color:#fff}
-.rn{background:var(--border);color:var(--text2)}
+.r1{background:#FFD700;color:#5a4000}.r2{background:#C0C0C0;color:#333}.r3{background:#CD7F32;color:#fff}.rn{background:var(--border);color:var(--text2)}
 .top-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
 .top-val{font-family:'DM Mono',monospace;font-size:12px;font-weight:500;flex-shrink:0}
 .top-bar{height:3px;background:var(--border);border-radius:2px;margin-top:3px;overflow:hidden}
-.top-bar-fill{height:100%;border-radius:2px;transition:width .3s}
-
+.top-bar-fill{height:100%;border-radius:2px}
 /* DETAIL */
 .dtscroll{overflow-x:auto;max-height:calc(100vh - 320px);overflow-y:auto}
 .dtable{border-collapse:collapse;font-size:12px;width:100%}
@@ -140,11 +152,10 @@ th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
 .badge-partial{background:var(--amber-l);color:var(--amber)}
 .badge-empty{background:var(--surface2);color:var(--text3)}
 .filter-bar{display:flex;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap}
-.filter-bar select,.filter-bar input{font-size:13px;padding:5px 9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface);color:var(--text);font-family:inherit}
+.filter-bar input,.filter-bar select{font-size:13px;padding:5px 9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface);color:var(--text);font-family:inherit}
 .filter-bar input{min-width:220px}
 .summary-chips{display:flex;gap:8px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--border)}
 .chip{padding:5px 12px;border-radius:99px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid transparent;transition:all .15s}
-.chip:hover{opacity:.85}
 .chip.active{border-color:currentColor}
 .chip-all{background:var(--surface2);color:var(--text2)}
 .chip-full{background:var(--teal-l);color:var(--teal)}
@@ -155,45 +166,35 @@ th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
 .pager button{padding:4px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--surface);font-size:12px;cursor:pointer;font-family:inherit}
 .pager button:hover{background:var(--surface2)}
 .pager button:disabled{opacity:.4;cursor:default}
+/* DRIVE MODAL */
+.drive-modal{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:999;display:none;align-items:center;justify-content:center}
+.drive-modal.open{display:flex}
+.dbinfo{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--text2)}
+.dbtag{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:3px 9px;font-size:12px}
 .hidden{display:none!important}
-
-/* AUTH */
-.auth-overlay{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center}
-.auth-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:32px;width:360px;max-width:90vw}
-.auth-logo{display:flex;align-items:center;gap:8px;font-size:16px;font-weight:600;margin-bottom:24px}
-.auth-field{margin-bottom:14px}
-.auth-field label{display:block;font-size:12px;color:var(--text2);margin-bottom:5px;font-weight:500}
-.auth-field input{width:100%;padding:9px 12px;border:1px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;outline:none;background:var(--surface);color:var(--text)}
-.auth-field input:focus{border-color:var(--purple-m)}
-.auth-err{font-size:12px;color:var(--coral);margin-bottom:12px;display:none}
-/* USER MENU */
-.user-menu{position:relative}
-.user-btn{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--surface);cursor:pointer;font-size:13px;font-family:inherit;color:var(--text)}
-.user-btn:hover{background:var(--surface2)}
-.user-dropdown{position:absolute;top:calc(100% + 6px);right:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);min-width:180px;z-index:500;box-shadow:0 4px 16px rgba(0,0,0,.1);display:none}
-.user-dropdown.open{display:block}
-.user-dropdown a{display:block;padding:9px 14px;font-size:13px;color:var(--text);cursor:pointer;transition:background .1s}
-.user-dropdown a:hover{background:var(--surface2)}
-.user-dropdown .sep{border-top:1px solid var(--border);margin:4px 0}
-/* MODAL */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1000;display:none;align-items:center;justify-content:center}
-.modal-overlay.open{display:flex}
-.modal-box{background:var(--surface);border-radius:var(--rl);padding:24px;width:400px;max-width:90vw}
-.modal-title{font-size:15px;font-weight:600;margin-bottom:16px}
-.modal-field{margin-bottom:12px}
-.modal-field label{display:block;font-size:12px;color:var(--text2);margin-bottom:4px}
-.modal-field input{width:100%;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--r);font-size:13px;font-family:inherit;outline:none;background:var(--surface);color:var(--text)}
-.modal-field input:focus{border-color:var(--purple-m)}
-.modal-err{font-size:12px;color:var(--coral);margin-bottom:8px;min-height:16px}
-.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
-.user-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
-.user-table th,.user-table td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:left}
-.user-table th{font-size:11px;color:var(--text2);font-weight:500;text-transform:uppercase}
-.badge-admin{background:var(--purple-l);color:var(--purple);padding:2px 8px;border-radius:99px;font-size:11px;font-weight:500}
-.badge-user{background:var(--surface2);color:var(--text2);padding:2px 8px;border-radius:99px;font-size:11px}
 </style>
 </head>
 <body>
+
+<!-- AUTH OVERLAY -->
+<div class="auth-overlay" id="auth-overlay">
+  <div class="auth-card">
+    <div class="auth-logo"><div class="logo-dot"></div>CFS Sản Lượng</div>
+    <div class="auth-sub">Đăng nhập để tiếp tục</div>
+    <div class="auth-field">
+      <label>Email</label>
+      <input type="email" id="auth-email" placeholder="email@company.com" autocomplete="email">
+    </div>
+    <div class="auth-field">
+      <label>Mật khẩu</label>
+      <input type="password" id="auth-pass" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <div class="auth-err" id="auth-err"></div>
+    <button class="btn btn-purple" style="width:100%;padding:10px;font-size:14px" onclick="doLogin()" id="btn-login">Đăng nhập</button>
+  </div>
+</div>
+
+<!-- HEADER -->
 <div class="header">
   <div class="logo"><div class="logo-dot"></div>CFS Sản Lượng</div>
   <div class="leg">
@@ -206,20 +207,18 @@ th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
       <span class="dbtag" id="db-count">0 pallets</span>
       <span class="dbtag" id="db-updated"></span>
     </div>
-    <label class="btn btn-sm" for="fi-json" title="Tải JSON dữ liệu cũ" style="cursor:pointer">📂 JSON</label>
-    <label class="btn btn-sm" for="fi-excel" title="Tải file Excel CFS" style="cursor:pointer;background:var(--teal-l);color:var(--teal);border-color:var(--teal-m)">📊 Excel</label>
-    <input type="file" id="fi-json" accept=".json" class="hidden">
+    <!-- Upload buttons (admin only) -->
+    <label class="btn btn-sm admin-only hidden" for="fi-excel" title="Tải file Excel CFS" style="cursor:pointer;background:var(--teal-l);color:var(--teal);border-color:var(--teal-m)">📊 Excel</label>
     <input type="file" id="fi-excel" accept=".xls,.xlsx" class="hidden">
-    <div style="width:1px;height:24px;background:var(--border);margin:0 2px"></div>
-    <button class="btn btn-sm" onclick="saveJSON()" id="btn-save" style="display:none">💾 Lưu JSON</button>
-    <button class="btn btn-sm" onclick="showDriveModal()" id="btn-drive" style="display:none;background:var(--purple-l);color:var(--purple);border-color:var(--purple-m)">☁️ Drive</button>
+    <button class="btn btn-sm admin-only hidden" onclick="saveAndUpload()" id="btn-save">💾 Lưu & Upload</button>
+    <button class="btn btn-sm" onclick="loadFromSupabase()" id="btn-load" style="display:none;background:var(--purple-l);color:var(--purple);border-color:var(--purple-m)">☁️ Tải dữ liệu</button>
     <div class="user-menu" id="user-menu" style="display:none">
       <button class="user-btn" onclick="toggleUserMenu()">
         <span id="user-display">👤</span> ▾
       </button>
       <div class="user-dropdown" id="user-dropdown">
-        <a onclick="openModal('modal-chpw');toggleUserMenu()">🔑 Đổi mật khẩu</a>
-        <a id="admin-link" style="display:none" onclick="openUserMgmt();toggleUserMenu()">👥 Quản lý tài khoản</a>
+        <a onclick="openModal('modal-chpw');closeDropdown()">🔑 Đổi mật khẩu</a>
+        <a id="admin-link" class="hidden" onclick="openUserMgmt();closeDropdown()">👥 Quản lý tài khoản</a>
         <div class="sep"></div>
         <a onclick="doLogout()" style="color:var(--coral)">🚪 Đăng xuất</a>
       </div>
@@ -227,37 +226,78 @@ th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
   </div>
 </div>
 
-<!-- Drive Modal -->
-<div id="drive-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:999;align-items:center;justify-content:center">
-  <div style="background:var(--surface);border-radius:var(--rl);padding:24px;width:480px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,.2)">
-    <div style="font-size:15px;font-weight:600;margin-bottom:6px">☁️ Tải dữ liệu mới nhất</div>
-    <div style="font-size:12px;color:var(--text2);margin-bottom:16px">Tải dữ liệu từ GitHub hoặc từ file trên máy tính</div>
-
-    <!-- Option 1: Auto from GitHub -->
-    <div style="background:var(--teal-l);border:1px solid var(--teal-m);border-radius:var(--r);padding:12px 14px;margin-bottom:10px">
-      <div style="font-size:12px;font-weight:600;color:var(--teal);margin-bottom:6px">⚡ Tự động — Tải từ GitHub</div>
-      <div style="font-size:11px;color:var(--teal);margin-bottom:8px">Luôn lấy dữ liệu mới nhất, nhanh 1-2 giây</div>
-      <button class="btn btn-teal btn-sm" onclick="fetchFromGitHub()" id="btn-fetch-gh" style="width:100%">⬇ Tải dữ liệu</button>
+<!-- CHANGE PASSWORD MODAL -->
+<div class="modal-overlay" id="modal-chpw">
+  <div class="modal-box">
+    <div class="modal-title">🔑 Đổi mật khẩu</div>
+    <div class="modal-field"><label>Mật khẩu mới</label><input type="password" id="chpw-new" placeholder="Tối thiểu 6 ký tự"></div>
+    <div class="modal-field"><label>Xác nhận mật khẩu mới</label><input type="password" id="chpw-confirm" placeholder="••••••••"></div>
+    <div class="modal-err" id="chpw-err"></div>
+    <div class="modal-ok" id="chpw-ok"></div>
+    <div class="modal-actions">
+      <button class="btn btn-sm" onclick="closeModal('modal-chpw')">Hủy</button>
+      <button class="btn btn-sm btn-purple" onclick="doChangePw()">Lưu</button>
     </div>
+  </div>
+</div>
 
-    <!-- Option 2: Manual file -->
-    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px">
-      <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px">📁 Thủ công — Tải file từ máy tính</div>
-      <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Dùng khi không có mạng hoặc muốn load file cụ thể</div>
-      <label class="btn btn-sm" for="fi-json" style="display:block;text-align:center;cursor:pointer">📂 Chọn file JSON / JSON.gz</label>
+<!-- USER MANAGEMENT MODAL (admin) -->
+<div class="modal-overlay" id="modal-users">
+  <div class="modal-box" style="width:520px">
+    <div class="modal-title">👥 Quản lý tài khoản</div>
+    <table class="user-table">
+      <thead><tr><th>Email</th><th>Vai trò</th><th>Thao tác</th></tr></thead>
+      <tbody id="user-table-body"><tr><td colspan="3" style="color:var(--text3);text-align:center;padding:16px">Đang tải...</td></tr></tbody>
+    </table>
+    <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+      <div style="font-size:13px;font-weight:500;margin-bottom:10px">Thêm tài khoản mới</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div class="modal-field" style="margin:0"><label>Email</label><input type="email" id="new-user-email" placeholder="email@company.com"></div>
+        <div class="modal-field" style="margin:0"><label>Mật khẩu</label><input type="password" id="new-user-pass" placeholder="Tối thiểu 6 ký tự"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <label style="font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="new-user-admin"> Admin
+        </label>
+      </div>
+      <div class="modal-err" id="new-user-err"></div>
+      <div class="modal-ok" id="new-user-ok"></div>
+      <button class="btn btn-sm btn-teal" onclick="doAddUser()">+ Thêm tài khoản</button>
     </div>
+    <div class="modal-actions"><button class="btn btn-sm" onclick="closeModal('modal-users')">Đóng</button></div>
+  </div>
+</div>
 
-    <div id="drive-status" style="margin-top:10px;font-size:12px;display:none"></div>
+<!-- RESET PASSWORD MODAL -->
+<div class="modal-overlay" id="modal-reset">
+  <div class="modal-box">
+    <div class="modal-title">🔄 Reset mật khẩu</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Reset mật khẩu cho: <strong id="reset-email-display"></strong></div>
+    <div class="modal-field"><label>Mật khẩu mới</label><input type="password" id="reset-pass" placeholder="Tối thiểu 6 ký tự"></div>
+    <div class="modal-err" id="reset-err"></div>
+    <div class="modal-ok" id="reset-ok"></div>
+    <div class="modal-actions">
+      <button class="btn btn-sm" onclick="closeModal('modal-reset');openModal('modal-users')">Hủy</button>
+      <button class="btn btn-sm btn-purple" onclick="doResetPw()">Reset</button>
+    </div>
+  </div>
+</div>
+
+<!-- LOAD MODAL -->
+<div class="drive-modal" id="load-modal">
+  <div style="background:var(--surface);border-radius:var(--rl);padding:24px;width:400px;max-width:90vw">
+    <div style="font-size:15px;font-weight:600;margin-bottom:6px">☁️ Tải dữ liệu</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:16px">Tải dữ liệu mới nhất từ Supabase</div>
+    <button class="btn btn-teal btn-sm" onclick="fetchData()" id="btn-fetch" style="width:100%;margin-bottom:10px">⬇ Tải từ Supabase</button>
+    <div id="load-status" style="font-size:12px;display:none;padding:8px;border-radius:var(--r)"></div>
     <div style="display:flex;justify-content:flex-end;margin-top:12px">
-      <button class="btn btn-sm" onclick="hideDriveModal()">Đóng</button>
+      <button class="btn btn-sm" onclick="closeLoadModal()">Đóng</button>
     </div>
   </div>
 </div>
 
 <div class="main">
-
   <div id="sbar" class="sbar info hidden"></div>
-
   <div id="dashboard" class="hidden">
     <div class="metrics" id="metrics"></div>
     <div class="card">
@@ -267,7 +307,7 @@ th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
         <button class="ntab" onclick="switchMain('detail')">🔍 Chi tiết pallet <span id="pending-badge" style="background:var(--coral);color:#fff;border-radius:99px;padding:1px 7px;font-size:11px;margin-left:4px"></span></button>
       </div>
 
-      <!-- ── REPORT PANEL ── -->
+      <!-- REPORT -->
       <div class="tab-panel active" id="panel-report">
         <div class="nav-tabs" style="border-radius:0">
           <button class="ntab active" onclick="switchPeriod('day')">Theo ngày</button>
@@ -281,14 +321,12 @@ th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
         <div class="controls">
           <select id="sel-year" onchange="renderAll()"></select>
           <select id="sel-month" onchange="renderAll()"><option value="all">Tất cả tháng</option></select>
-          <div class="cright">
-            <button class="btn btn-teal btn-sm" onclick="exportExcel()">⬇ Xuất Excel</button>
-          </div>
+          <div class="cright"><button class="btn btn-teal btn-sm" onclick="exportExcel()">⬇ Xuất Excel</button></div>
         </div>
         <div class="tscroll" id="tbl"></div>
       </div>
 
-      <!-- ── TOP PANEL ── -->
+      <!-- TOP -->
       <div class="tab-panel" id="panel-top">
         <div class="sub-tabs">
           <button class="stab active" onclick="switchTopRole('Tally')">Tally</button>
@@ -306,15 +344,13 @@ th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
           <select id="top-week" onchange="renderTop()" style="display:none"></select>
           <select id="top-day" onchange="renderTop()" style="display:none"></select>
           <select id="top-n" onchange="renderTop()">
-            <option value="5">Top 5</option>
-            <option value="10">Top 10</option>
-            <option value="99">Tất cả</option>
+            <option value="5">Top 5</option><option value="10">Top 10</option><option value="99">Tất cả</option>
           </select>
         </div>
         <div class="top-grid" id="top-grid"></div>
       </div>
 
-      <!-- ── DETAIL PANEL ── -->
+      <!-- DETAIL -->
       <div class="tab-panel" id="panel-detail">
         <div class="summary-chips" id="chips"></div>
         <div class="filter-bar">
@@ -352,85 +388,323 @@ th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
 </div>
 
 <script>
+// ── SUPABASE INIT ─────────────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://tblwhztipyzafmzspbcz.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_VNmxzRyygd4qX-NKSDzqJQ_ZK4EMPP8';
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
 let db = {};
-// Show drive button always (even before data loaded)
-window.addEventListener('DOMContentLoaded',()=>{
-  document.getElementById('btn-drive').style.display='';
-  // Default File ID (pre-configured)
-  // File ID pre-configured, no input needed
-});
+let currentUser = null;
+let isAdmin = false;
 let currentPeriod = 'day';
 let currentRole = 'Tally';
 let currentMain = 'report';
+let currentTopRole = 'Tally';
 let detailFilter = 'all', detailSearch = '', detailPage = 1;
 let detailSortCol = 'status', detailSortDir = 'asc';
 let filteredRows = [];
+let evFiltered = [];
+let resetTargetId = null;
 const PAGE_SIZE = 100;
 
-// ── FILE INPUTS ───────────────────────────────────────────────────────────────
-document.getElementById('fi-json').addEventListener('change', e=>{if(e.target.files[0])loadJSON(e.target.files[0]);e.target.value='';});
-document.getElementById('fi-excel').addEventListener('change', e=>{if(e.target.files[0])loadExcel(e.target.files[0]);e.target.value='';});
+// ── AUTH ──────────────────────────────────────────────────────────────────────
+// Profiles table stores isAdmin flag
+async function doLogin() {
+  const email = document.getElementById('auth-email').value.trim();
+  const pass = document.getElementById('auth-pass').value;
+  const errEl = document.getElementById('auth-err');
+  const btn = document.getElementById('btn-login');
+  errEl.textContent = '';
+  if (!email || !pass) { errEl.textContent = 'Vui lòng điền đầy đủ'; return; }
+  btn.textContent = 'Đang đăng nhập...'; btn.disabled = true;
+  const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+  btn.textContent = 'Đăng nhập'; btn.disabled = false;
+  if (error) { errEl.textContent = 'Email hoặc mật khẩu không đúng'; return; }
+  currentUser = data.user;
+  // Check admin via user_metadata
+  isAdmin = currentUser.user_metadata?.is_admin === true;
+  onLoggedIn();
+}
 
-function loadJSON(file){
-  const r=new FileReader();
-  r.onload=e=>{
-    try{
-      const buf=new Uint8Array(e.target.result);
-      // Detect gzip magic bytes: 0x1f 0x8b
-      if(buf[0]===0x1f&&buf[1]===0x8b){
-        // Decompress gzip using DecompressionStream
-        const ds=new DecompressionStream('gzip');
-        const writer=ds.writable.getWriter();
-        const reader=ds.readable.getReader();
-        writer.write(buf);writer.close();
-        let chunks=[];
-        function pump(){return reader.read().then(({done,value})=>{if(done)return;chunks.push(value);return pump();});}
-        pump().then(()=>{
-          const decoded=new TextDecoder().decode(new Uint8Array(chunks.reduce((a,b)=>[...a,...b],[])));
-          try{const p=JSON.parse(decoded);db=p.db||p;showStatus('ok',`Đã tải JSON: ${Object.keys(db).length.toLocaleString()} pallet`);afterDataChange();}
-          catch(err){showStatus('err','Lỗi parse JSON sau giải nén: '+err.message);}
-        });
-      } else {
-        // Plain JSON
-        const text=new TextDecoder().decode(buf);
-        const p=JSON.parse(text);db=p.db||p;
-        showStatus('ok',`Đã tải JSON: ${Object.keys(db).length.toLocaleString()} pallet`);afterDataChange();
+function onLoggedIn() {
+  document.getElementById('auth-overlay').style.display = 'none';
+  document.getElementById('user-menu').style.display = '';
+  document.getElementById('btn-load').style.display = '';
+  document.getElementById('user-display').textContent = '👤 ' + (currentUser.email.split('@')[0]);
+  if (isAdmin) {
+    document.getElementById('admin-link').classList.remove('hidden');
+    document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
+  }
+  document.getElementById('fi-excel').addEventListener('change', e => {
+    if (e.target.files[0]) loadExcel(e.target.files[0]);
+    e.target.value = '';
+  });
+  // Auto load data
+  loadFromSupabase();
+}
+
+async function doLogout() {
+  await sb.auth.signOut();
+  currentUser = null; isAdmin = false; db = {};
+  document.getElementById('auth-overlay').style.display = 'flex';
+  document.getElementById('user-menu').style.display = 'none';
+  document.getElementById('btn-load').style.display = 'none';
+  document.getElementById('dashboard').classList.add('hidden');
+  document.getElementById('db-info').classList.add('hidden');
+  document.getElementById('auth-email').value = '';
+  document.getElementById('auth-pass').value = '';
+  document.getElementById('auth-err').textContent = '';
+  document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
+  closeDropdown();
+}
+
+function toggleUserMenu() { document.getElementById('user-dropdown').classList.toggle('open'); }
+function closeDropdown() { document.getElementById('user-dropdown').classList.remove('open'); }
+document.addEventListener('click', e => { if (!e.target.closest('.user-menu')) closeDropdown(); });
+
+// Enter key
+['auth-email','auth-pass'].forEach(id => {
+  document.getElementById(id)?.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+});
+
+// Check existing session
+sb.auth.getSession().then(({ data }) => {
+  if (data.session) {
+    currentUser = data.session.user;
+    isAdmin = currentUser.user_metadata?.is_admin === true;
+    onLoggedIn();
+  }
+});
+
+// CHANGE PASSWORD
+async function doChangePw() {
+  const newPw = document.getElementById('chpw-new').value;
+  const confirm = document.getElementById('chpw-confirm').value;
+  const errEl = document.getElementById('chpw-err');
+  const okEl = document.getElementById('chpw-ok');
+  errEl.textContent = ''; okEl.textContent = '';
+  if (!newPw || !confirm) { errEl.textContent = 'Vui lòng điền đầy đủ'; return; }
+  if (newPw.length < 6) { errEl.textContent = 'Mật khẩu tối thiểu 6 ký tự'; return; }
+  if (newPw !== confirm) { errEl.textContent = 'Mật khẩu không khớp'; return; }
+  const { error } = await sb.auth.updateUser({ password: newPw });
+  if (error) { errEl.textContent = error.message; return; }
+  okEl.textContent = '✅ Đổi mật khẩu thành công!';
+  setTimeout(() => closeModal('modal-chpw'), 1500);
+}
+
+// USER MANAGEMENT
+async function openUserMgmt() {
+  openModal('modal-users');
+  renderUserTable();
+}
+async function renderUserTable() {
+  const tbody = document.getElementById('user-table-body');
+  tbody.innerHTML = '<tr><td colspan="3" style="color:var(--text3);text-align:center;padding:16px">Đang tải...</td></tr>';
+  // Use admin API via service role - need edge function or manual management
+  // For now show current user info and instructions
+  tbody.innerHTML = `
+    <tr>
+      <td style="font-weight:500">${currentUser.email}</td>
+      <td><span class="badge-admin">Admin</span></td>
+      <td><span style="font-size:11px;color:var(--text3)">Tài khoản hiện tại</span></td>
+    </tr>
+    <tr><td colspan="3" style="font-size:11px;color:var(--text3);padding:10px;background:var(--surface2)">
+      💡 Để xem và quản lý toàn bộ user, vào <a href="${SUPABASE_URL.replace('supabase.co','supabase.com')}/dashboard/project/tblwhztipyzafmzspbcz/auth/users" target="_blank" style="color:var(--purple)">Supabase Dashboard → Authentication → Users</a>
+    </td></tr>`;
+}
+async function doAddUser() {
+  const email = document.getElementById('new-user-email').value.trim();
+  const pass = document.getElementById('new-user-pass').value;
+  const isAdm = document.getElementById('new-user-admin').checked;
+  const errEl = document.getElementById('new-user-err');
+  const okEl = document.getElementById('new-user-ok');
+  errEl.textContent = ''; okEl.textContent = '';
+  if (!email || !pass) { errEl.textContent = 'Vui lòng điền đầy đủ'; return; }
+  if (pass.length < 6) { errEl.textContent = 'Mật khẩu tối thiểu 6 ký tự'; return; }
+  // Sign up new user
+  const { data, error } = await sb.auth.signUp({
+    email, password: pass,
+    options: { data: { is_admin: isAdm } }
+  });
+  if (error) { errEl.textContent = error.message; return; }
+  okEl.textContent = `✅ Đã tạo tài khoản: ${email}`;
+  document.getElementById('new-user-email').value = '';
+  document.getElementById('new-user-pass').value = '';
+  document.getElementById('new-user-admin').checked = false;
+}
+async function doResetPw() {
+  const newPw = document.getElementById('reset-pass').value;
+  const errEl = document.getElementById('reset-err');
+  const okEl = document.getElementById('reset-ok');
+  errEl.textContent = ''; okEl.textContent = '';
+  if (!newPw || newPw.length < 6) { errEl.textContent = 'Mật khẩu tối thiểu 6 ký tự'; return; }
+  // Send reset email
+  const email = document.getElementById('reset-email-display').textContent;
+  const { error } = await sb.auth.resetPasswordForEmail(email);
+  if (error) { errEl.textContent = error.message; return; }
+  okEl.textContent = '✅ Đã gửi email reset mật khẩu!';
+  setTimeout(() => { closeModal('modal-reset'); openModal('modal-users'); }, 1500);
+}
+function openReset(email) {
+  document.getElementById('reset-email-display').textContent = email;
+  document.getElementById('reset-pass').value = '';
+  document.getElementById('reset-err').textContent = '';
+  document.getElementById('reset-ok').textContent = '';
+  closeModal('modal-users');
+  openModal('modal-reset');
+}
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+  document.querySelectorAll(`#${id} input`).forEach(i => { if(i.type!=='checkbox') i.value=''; });
+  document.querySelectorAll(`#${id} .modal-err,.modal-ok`).forEach(e => e.textContent='');
+}
+
+// ── SUPABASE DATA ─────────────────────────────────────────────────────────────
+function loadFromSupabase() {
+  document.getElementById('load-modal').classList.add('open');
+}
+function closeLoadModal() {
+  document.getElementById('load-modal').classList.remove('open');
+}
+async function fetchData() {
+  const btn = document.getElementById('btn-fetch');
+  const st = document.getElementById('load-status');
+  btn.textContent = '⏳ Đang tải...'; btn.disabled = true;
+  st.style.display = 'block'; st.style.background = 'var(--amber-l)'; st.style.color = 'var(--amber)';
+  st.textContent = 'Đang kết nối Supabase...';
+  try {
+    const { data, error } = await sb.storage.from('cfs-data').download('data.json.gz');
+    if (error) throw new Error(error.message);
+    st.textContent = 'Đang xử lý dữ liệu...';
+    const buf = await data.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    await parseAndLoadBytes(bytes, st);
+    btn.textContent = '⬇ Tải từ Supabase'; btn.disabled = false;
+  } catch(err) {
+    btn.textContent = '⬇ Tải từ Supabase'; btn.disabled = false;
+    st.style.background = 'var(--coral-l)'; st.style.color = 'var(--coral)';
+    st.textContent = '❌ ' + err.message + (err.message.includes('not found') ? ' — Chưa có file data, hãy upload Excel trước' : '');
+  }
+}
+
+async function saveAndUpload() {
+  if (!isAdmin) return;
+  const btn = document.getElementById('btn-save');
+  btn.textContent = '⏳ Đang lưu...'; btn.disabled = true;
+  try {
+    const json = JSON.stringify({ db, savedAt: new Date().toISOString() });
+    const enc = new TextEncoder().encode(json);
+    const cs = new CompressionStream('gzip');
+    const writer = cs.writable.getWriter();
+    const reader = cs.readable.getReader();
+    writer.write(enc); writer.close();
+    let chunks = [];
+    while(true) { const {done,value} = await reader.read(); if(done) break; chunks.push(value); }
+    const compressed = new Uint8Array(chunks.reduce((a,b)=>{const c=new Uint8Array(a.length+b.length);c.set(a);c.set(b,a.length);return c;},new Uint8Array(0)));
+    const blob = new Blob([compressed], { type: 'application/gzip' });
+    const { error } = await sb.storage.from('cfs-data').upload('data.json.gz', blob, {
+      upsert: true, contentType: 'application/gzip'
+    });
+    if (error) throw new Error(error.message);
+    btn.textContent = '💾 Lưu & Upload'; btn.disabled = false;
+    showStatus('ok', `✅ Đã upload lên Supabase — ${Object.keys(db).length.toLocaleString()} pallets`);
+  } catch(err) {
+    btn.textContent = '💾 Lưu & Upload'; btn.disabled = false;
+    showStatus('err', '❌ Upload thất bại: ' + err.message);
+  }
+}
+
+async function parseAndLoadBytes(bytes, statusEl) {
+  return new Promise((resolve, reject) => {
+    const workerCode = `
+      self.onmessage = async function(e) {
+        try {
+          let bytes = new Uint8Array(e.data);
+          if (bytes[0]===0x1f && bytes[1]===0x8b) {
+            const ds = new DecompressionStream('gzip');
+            const writer = ds.writable.getWriter();
+            const reader = ds.readable.getReader();
+            writer.write(bytes); writer.close();
+            let chunks = [];
+            while(true){const{done,value}=await reader.read();if(done)break;chunks.push(value);}
+            const all = new Uint8Array(chunks.reduce((a,b)=>{const c=new Uint8Array(a.length+b.length);c.set(a);c.set(b,a.length);return c;},new Uint8Array(0)));
+            bytes = all;
+          }
+          const text = new TextDecoder().decode(bytes);
+          const parsed = JSON.parse(text);
+          self.postMessage({ ok: true, data: parsed });
+        } catch(err) {
+          self.postMessage({ ok: false, error: err.message });
+        }
+      };
+    `;
+    const blob = new Blob([workerCode], { type: 'application/javascript' });
+    const worker = new Worker(URL.createObjectURL(blob));
+    worker.onmessage = e => {
+      worker.terminate();
+      if (!e.data.ok) { reject(new Error(e.data.error)); return; }
+      const p = e.data.data; db = p.db || p;
+      if (statusEl) {
+        statusEl.style.background = 'var(--teal-l)'; statusEl.style.color = 'var(--teal)';
+        statusEl.textContent = `✅ Đã tải ${Object.keys(db).length.toLocaleString()} pallets`;
       }
-    }catch(err){showStatus('err','Không đọc được JSON: '+err.message);}
+      setTimeout(() => closeLoadModal(), 1200);
+      showStatus('ok', `Đã tải: ${Object.keys(db).length.toLocaleString()} pallets`);
+      afterDataChange();
+      resolve();
+    };
+    worker.onerror = e => { worker.terminate(); reject(new Error(e.message)); };
+    worker.postMessage(bytes.buffer, [bytes.buffer]);
+  });
+}
+
+// ── EXCEL PROCESSING ──────────────────────────────────────────────────────────
+function loadExcel(file) {
+  const r = new FileReader();
+  r.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      processExcel(XLSX.utils.sheet_to_json(ws, { defval: null }), file.name);
+    } catch(err) { showStatus('err', 'Không đọc được Excel: ' + err.message); }
   };
   r.readAsArrayBuffer(file);
 }
-function loadExcel(file){
-  const r=new FileReader();
-  r.onload=e=>{try{const wb=XLSX.read(e.target.result,{type:'array',cellDates:true});const ws=wb.Sheets[wb.SheetNames[0]];processExcel(XLSX.utils.sheet_to_json(ws,{defval:null}),file.name);}catch(err){showStatus('err','Không đọc được Excel: '+err.message);}};
-  r.readAsArrayBuffer(file);
-}
-function processExcel(raw,fname){
-  const outRows=raw.filter(r=>(r['Cargo In Type']||'').toString().trim().toUpperCase()==='OUT');
-  let added=0,updated=0,skipped=0;
-  outRows.forEach(r=>{
-    const pm=(r['Pallet Master Code']||'').toString().trim();if(!pm){skipped++;return;}
-    const cbm=parseFloat(r['CBM'])||0;
-    const inTallyTime=parseDate(r['Tally In Time']),outTallyTime=parseDate(r['Tally Out Time']);
-    const inTally=(r['In Tally']||'').toString().trim()||null,outTally=(r['Out Tally']||'').toString().trim()||null;
-    const inDate=parseDate(r['In Date']),outDate=parseDate(r['Out Date']);
-    const inUser=(r['In User']||r['In Uer']||'').toString().trim()||null,outUser=(r['Out Uer']||r['Out User']||'').toString().trim()||null;
-    const ex=db[pm];
-    // Store with short keys to reduce JSON size
-    const trimDt=d=>d?new Date(d).toISOString().slice(0,16):null;
-    if(!ex){db[pm]={it:inTally,ii:trimDt(inTallyTime),ot:outTally,oi:trimDt(outTallyTime),iu:inUser,id:trimDt(inDate),ou:outUser,od:trimDt(outDate),c:cbm};added++;}
-    else{
-      let ch=false;
-      const trimDt2=d=>d?new Date(d).toISOString().slice(0,16):null;
-      if(!ex.oi&&!ex.outTallyTime&&outTallyTime){ex.oi=trimDt2(outTallyTime);ch=true;}
-      if(!ex.ot&&!ex.outTally&&outTally){ex.ot=outTally;ch=true;}
-      if(!ex.od&&!ex.outDate&&outDate){ex.od=trimDt2(outDate);ch=true;}
-      if(!ex.ou&&!ex.outUser&&outUser){ex.ou=outUser;ch=true;}
-      if(cbm&&cbm!==(ex.c||ex.cbm)){ex.c=cbm;ch=true;}
-      if(ch)updated++;else skipped++;
+
+function processExcel(raw, fname) {
+  const outRows = raw.filter(r => (r['Cargo In Type']||'').toString().trim().toUpperCase() === 'OUT');
+  let added=0, updated=0, skipped=0;
+  const trimDt = d => d ? new Date(d).toISOString().slice(0,16) : null;
+  outRows.forEach(r => {
+    const pm = (r['Pallet Master Code']||'').toString().trim();
+    if (!pm) { skipped++; return; }
+    const cbm = parseFloat(r['CBM']) || 0;
+    const inTallyTime = parseDate(r['Tally In Time']);
+    const outTallyTime = parseDate(r['Tally Out Time']);
+    const inTally = (r['In Tally']||'').toString().trim() || null;
+    const outTally = (r['Out Tally']||'').toString().trim() || null;
+    const inDate = parseDate(r['In Date']);
+    const outDate = parseDate(r['Out Date']);
+    const inUser = (r['In User']||r['In Uer']||'').toString().trim() || null;
+    const outUser = (r['Out Uer']||r['Out User']||'').toString().trim() || null;
+    const ex = db[pm];
+    if (!ex) {
+      db[pm] = { it:inTally, ii:trimDt(inTallyTime), ot:outTally, oi:trimDt(outTallyTime), iu:inUser, id:trimDt(inDate), ou:outUser, od:trimDt(outDate), c:cbm };
+      added++;
+    } else {
+      let ch = false;
+      if (!ex.oi && !ex.outTallyTime && outTallyTime) { ex.oi=trimDt(outTallyTime); ch=true; }
+      if (!ex.ot && !ex.outTally && outTally) { ex.ot=outTally; ch=true; }
+      if (!ex.od && !ex.outDate && outDate) { ex.od=trimDt(outDate); ch=true; }
+      if (!ex.ou && !ex.outUser && outUser) { ex.ou=outUser; ch=true; }
+      if (cbm && cbm!==(ex.c||ex.cbm)) { ex.c=cbm; ch=true; }
+      if (ch) updated++; else skipped++;
     }
   });
-  showStatus('ok',`<strong>${fname}</strong> — ${outRows.length.toLocaleString()} dòng OUT · <span style="color:var(--teal)">+${added} mới</span> · <span style="color:var(--amber)">↑${updated} cập nhật</span> · ${skipped} không đổi`);
+  showStatus('ok', `<strong>${fname}</strong> — ${outRows.length.toLocaleString()} dòng OUT · <span style="color:var(--teal)">+${added} mới</span> · <span style="color:var(--amber)">↑${updated} cập nhật</span> · ${skipped} không đổi — Bấm 💾 Lưu & Upload để cập nhật`);
   afterDataChange();
 }
 
@@ -449,16 +723,11 @@ function fmtDt(v){if(!v)return'<span class="ce">—</span>';const d=parseDate(v)
 function buildEvents(yearFilter,monthFilter){
   const events=[];
   Object.entries(db).forEach(([pm,rec])=>{
-    // Support both old (long) and new (short) keys
     const cbm=rec.c||rec.cbm||0;
-    const inTally=rec.it||rec.inTally;
-    const inTallyTime=rec.ii||rec.inTallyTime;
-    const outTally=rec.ot||rec.outTally;
-    const outTallyTime=rec.oi||rec.outTallyTime;
-    const inUser=rec.iu||rec.inUser;
-    const inDate=rec.id||rec.inDate;
-    const outUser=rec.ou||rec.outUser;
-    const outDate=rec.od||rec.outDate;
+    const inTally=rec.it||rec.inTally,inTallyTime=rec.ii||rec.inTallyTime;
+    const outTally=rec.ot||rec.outTally,outTallyTime=rec.oi||rec.outTallyTime;
+    const inUser=rec.iu||rec.inUser,inDate=rec.id||rec.inDate;
+    const outUser=rec.ou||rec.outUser,outDate=rec.od||rec.outDate;
     if(inTally&&inTallyTime){const d=parseDate(inTallyTime);if(d&&yearOk(d,yearFilter,monthFilter))events.push({date:d,type:'IN',role:'Tally',person:inTally,cbm});}
     if(outTally&&outTallyTime){const d=parseDate(outTallyTime);if(d&&yearOk(d,yearFilter,monthFilter))events.push({date:d,type:'OUT',role:'Tally',person:outTally,cbm});}
     if(inUser&&inDate){const d=parseDate(inDate);if(d&&yearOk(d,yearFilter,monthFilter))events.push({date:d,type:'IN',role:'Forklift',person:inUser,cbm});}
@@ -480,14 +749,12 @@ function statusLabel(s){
   return'<span class="badge badge-empty">❓ Trống</span>';
 }
 
-// ── AFTER DATA CHANGE ─────────────────────────────────────────────────────────
 function afterDataChange(){
-  const count=Object.keys(db).length;if(!count)return;
+  const count=Object.keys(db).length;
+  if(!count)return;
   document.getElementById('db-info').classList.remove('hidden');
   document.getElementById('db-count').textContent=count.toLocaleString()+' pallets';
   document.getElementById('db-updated').textContent='Cập nhật: '+new Date().toLocaleString('vi-VN');
-  document.getElementById('btn-save').style.display='';
-  document.getElementById('btn-drive').style.display='';
   document.getElementById('dashboard').classList.remove('hidden');
   const pending=Object.values(db).filter(r=>getStatus(r)==='in-only').length;
   document.getElementById('pending-badge').textContent=pending>0?pending:'';
@@ -496,30 +763,26 @@ function afterDataChange(){
 
 function buildSelectors(){
   const years=new Set();
-  Object.values(db).forEach(rec=>{[rec.inTallyTime,rec.outTallyTime,rec.inDate,rec.outDate].forEach(d=>{const pd=parseDate(d);if(pd)years.add(pd.getFullYear());});});
+  Object.values(db).forEach(rec=>{
+    [rec.ii||rec.inTallyTime,rec.oi||rec.outTallyTime,rec.id||rec.inDate,rec.od||rec.outDate].forEach(d=>{const pd=parseDate(d);if(pd)years.add(pd.getFullYear());});
+  });
   const sy=[...years].sort();
   ['sel-year','top-year','det-year'].forEach(id=>{
     const el=document.getElementById(id);
     el.innerHTML=(id==='det-year'?'<option value="all">Tất cả năm</option>':'')+sy.map(y=>`<option value="${y}">${y}</option>`).join('');
     if(sy.length)el.value=sy[sy.length-1];
   });
-  // top-month
-  const topM=document.getElementById('top-month');
-  const mNames=['','Tháng 1','Tháng 2','Tháng 3','Tháng 4','Tháng 5','Tháng 6','Tháng 7','Tháng 8','Tháng 9','Tháng 10','Tháng 11','Tháng 12'];
-  topM.innerHTML='<option value="all">Tất cả tháng</option>'+[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}">${mNames[m]}</option>`).join('');
 }
 
-// ── MAIN TAB ──────────────────────────────────────────────────────────────────
+// ── REPORT ────────────────────────────────────────────────────────────────────
 function switchMain(tab){
   currentMain=tab;
-  document.querySelectorAll('.nav-tabs:first-child .ntab').forEach((b,i)=>b.classList.toggle('active',['report','top','detail'][i]===tab));
+  document.querySelectorAll('.nav-tabs:first-of-type .ntab').forEach((b,i)=>b.classList.toggle('active',['report','top','detail'][i]===tab));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
   document.getElementById('panel-'+tab).classList.add('active');
   if(tab==='detail')renderDetail();
   if(tab==='top')renderTop();
 }
-
-// ── REPORT ────────────────────────────────────────────────────────────────────
 function switchPeriod(p){
   currentPeriod=p;
   document.querySelectorAll('#panel-report .nav-tabs .ntab').forEach((b,i)=>b.classList.toggle('active',['day','week','month'][i]===p));
@@ -528,7 +791,7 @@ function switchPeriod(p){
 }
 function switchRole(r){
   currentRole=r;
-  document.querySelectorAll('.stab').forEach((b,i)=>b.classList.toggle('active',['Tally','Forklift'][i]===r));
+  document.querySelectorAll('#panel-report .stab').forEach((b,i)=>b.classList.toggle('active',['Tally','Forklift'][i]===r));
   renderAll();
 }
 function renderAll(){
@@ -537,16 +800,14 @@ function renderAll(){
   const month=monthVal==='all'?'all':parseInt(monthVal);
   if(currentPeriod==='day'){
     const months=new Set();
-    Object.values(db).forEach(rec=>{[rec.inTallyTime,rec.outTallyTime,rec.inDate,rec.outDate].forEach(d=>{const pd=parseDate(d);if(pd&&pd.getFullYear()===year)months.add(pd.getMonth()+1);});});
+    Object.values(db).forEach(rec=>{[rec.ii||rec.inTallyTime,rec.oi||rec.outTallyTime,rec.id||rec.inDate,rec.od||rec.outDate].forEach(d=>{const pd=parseDate(d);if(pd&&pd.getFullYear()===year)months.add(pd.getMonth()+1);});});
     const mNames=['','Tháng 1','Tháng 2','Tháng 3','Tháng 4','Tháng 5','Tháng 6','Tháng 7','Tháng 8','Tháng 9','Tháng 10','Tháng 11','Tháng 12'];
     const ms=document.getElementById('sel-month');const cur=ms.value;
     ms.innerHTML='<option value="all">Tất cả tháng</option>'+[...months].sort((a,b)=>a-b).map(m=>`<option value="${m}">${mNames[m]}</option>`).join('');
     if([...months].map(String).includes(cur))ms.value=cur;
   }
-  renderMetrics(year);
-  renderTable(year,month);
+  renderMetrics(year);renderTable(year,month);
 }
-
 function renderMetrics(year){
   const ev=buildEvents(year,'all');
   const cbmIn=ev.filter(e=>e.type==='IN').reduce((s,e)=>s+e.cbm,0);
@@ -563,7 +824,6 @@ function renderMetrics(year){
     <div class="metric"><div class="mlabel">Forklift</div><div class="mval">${forklifts}</div><div class="msub">nhân viên</div></div>
     <div class="metric"><div class="mlabel">Chờ OUT</div><div class="mval" style="color:var(--amber)">${pending.toLocaleString()}</div><div class="msub">${total.toLocaleString()} tổng pallet</div></div>`;
 }
-
 function renderTable(year,month){
   const events=buildEvents(year,month).filter(e=>e.role===currentRole);
   if(!events.length){document.getElementById('tbl').innerHTML='<div style="padding:40px;text-align:center;color:var(--text3)">Không có dữ liệu.</div>';return;}
@@ -585,9 +845,7 @@ function renderTable(year,month){
     else agg[e.person][pk].out+=e.cbm;
   });
   const persons=Object.keys(agg).sort();
-  // header row 1
-  let h=`<table><thead><tr>
-    <th rowspan="2" style="text-align:left;min-width:140px;background:var(--surface2)">Nhân viên</th>`;
+  let h=`<table><thead><tr><th rowspan="2" style="text-align:left;min-width:140px;background:var(--surface2)">Nhân viên</th>`;
   periods.forEach(p=>{h+=`<th colspan="3" class="thp">${p.label}</th>`;});
   h+=`<th colspan="3" class="ths">Tổng</th></tr><tr>`;
   periods.forEach(()=>{h+=`<th class="thi">IN</th><th class="tho">OUT</th><th class="tht">Total</th>`;});
@@ -600,121 +858,50 @@ function renderTable(year,month){
     h+=`<td>${fi(pi)}</td><td>${fo(po)}</td><td>${ft(pi+po)}</td></tr>`;
     grand.in+=pi;grand.out+=po;
   });
-  // subtotal
   h+=`<tr class="str"><td class="sc">Tổng ${currentRole}</td>`;
-  periods.forEach(({key})=>{
-    let si=0,so=0;persons.forEach(p=>{const d=(agg[p]||{})[key]||{in:0,out:0};si+=d.in;so+=d.out;});
-    h+=`<td>${fi(si)}</td><td>${fo(so)}</td><td>${ft(si+so)}</td>`;
-  });
+  periods.forEach(({key})=>{let si=0,so=0;persons.forEach(p=>{const d=(agg[p]||{})[key]||{in:0,out:0};si+=d.in;so+=d.out;});h+=`<td>${fi(si)}</td><td>${fo(so)}</td><td>${ft(si+so)}</td>`;});
   h+=`<td>${fi(grand.in)}</td><td>${fo(grand.out)}</td><td>${ft(grand.in+grand.out)}</td></tr>`;
-  h+=`</tbody></table>`;
+  h+=`<tr class="gtr"><td class="grc">TỔNG CỘNG</td>`;
+  periods.forEach(({key})=>{let gi=0,go=0;persons.forEach(p=>{const d=(agg[p]||{})[key]||{in:0,out:0};gi+=d.in;go+=d.out;});h+=`<td>${gi>0?`<span class="gci">${gi.toFixed(2)}</span>`:'<span style="opacity:.4">—</span>'}</td><td>${go>0?`<span class="gco">${go.toFixed(2)}</span>`:'<span style="opacity:.4">—</span>'}</td><td>${(gi+go)>0?(gi+go).toFixed(2):'—'}</td>`;});
+  h+=`<td><span class="gci">${grand.in.toFixed(2)}</span></td><td><span class="gco">${grand.out.toFixed(2)}</span></td><td>${(grand.in+grand.out).toFixed(2)}</td></tr></tbody></table>`;
   document.getElementById('tbl').innerHTML=h;
 }
 
-// ── TOP PERFORMERS ────────────────────────────────────────────────────────────
-function onTopYearChange(){
-  const p=document.getElementById('top-period').value;
-  if(p==='week')buildTopWeeks();
-  if(p==='day')buildTopDays();
-  renderTop();
-}
+// ── TOP ───────────────────────────────────────────────────────────────────────
+function switchTopRole(r){currentTopRole=r;document.querySelectorAll('#panel-top .stab').forEach((b,i)=>b.classList.toggle('active',['Tally','Forklift'][i]===r));renderTop();}
+function onTopYearChange(){const p=document.getElementById('top-period').value;if(p==='week')buildTopWeeks();if(p==='day')buildTopDays();renderTop();}
 function onTopPeriodChange(){
   const p=document.getElementById('top-period').value;
   document.getElementById('top-month').style.display=p==='month'?'':'none';
   document.getElementById('top-week').style.display=p==='week'?'':'none';
   document.getElementById('top-day').style.display=p==='day'?'':'none';
-  // Rebuild sub-selectors when switching to week/day
-  if(p==='week')buildTopWeeks();
-  if(p==='day')buildTopDays();
-  renderTop();
+  if(p==='week')buildTopWeeks();if(p==='day')buildTopDays();renderTop();
 }
-function onTopMonthChange(){
-  const p=document.getElementById('top-period').value;
-  if(p==='day')buildTopDays();
-  renderTop();
-}
-function buildTopWeeks(){
-  const year=parseInt(document.getElementById('top-year').value);
-  const ev=buildEvents(year,'all');
-  const weeks=[...new Set(ev.map(e=>wKey(e.date)))].sort();
-  const sel=document.getElementById('top-week');
-  sel.innerHTML=weeks.map(w=>`<option value="${w}">${w.replace('-W','·W')}</option>`).join('');
-}
-function buildTopDays(){
-  const year=parseInt(document.getElementById('top-year').value);
-  const monthVal=document.getElementById('top-month').value;
-  const month=monthVal==='all'?'all':parseInt(monthVal);
-  const ev=buildEvents(year,month);
-  const days=[...new Set(ev.map(e=>dKey(e.date)))].sort();
-  const sel=document.getElementById('top-day');
-  sel.innerHTML=days.map(d=>`<option value="${d}">${d.slice(8)+'/'+d.slice(5,7)+'/'+d.slice(0,4)}</option>`).join('');
-}
-let evFiltered=[];
+function onTopMonthChange(){const p=document.getElementById('top-period').value;if(p==='day')buildTopDays();renderTop();}
+function buildTopWeeks(){const year=parseInt(document.getElementById('top-year').value);const ev=buildEvents(year,'all');const weeks=[...new Set(ev.map(e=>wKey(e.date)))].sort();document.getElementById('top-week').innerHTML=weeks.map(w=>`<option value="${w}">${w.replace('-W','·W')}</option>`).join('');}
+function buildTopDays(){const year=parseInt(document.getElementById('top-year').value);const monthVal=document.getElementById('top-month').value;const month=monthVal==='all'?'all':parseInt(monthVal);const ev=buildEvents(year,month);const days=[...new Set(ev.map(e=>dKey(e.date)))].sort();document.getElementById('top-day').innerHTML=days.map(d=>`<option value="${d}">${d.slice(8)+'/'+d.slice(5,7)+'/'+d.slice(0,4)}</option>`).join('');}
 function renderTop(){
   const year=parseInt(document.getElementById('top-year').value);
   const period=document.getElementById('top-period').value;
   const n=parseInt(document.getElementById('top-n').value);
-  // Determine which events to use based on period
-  if(period==='year'){
-    evFiltered=buildEvents(year,'all');
-  } else if(period==='month'){
-    const monthVal=document.getElementById('top-month').value;
-    const month=monthVal==='all'?'all':parseInt(monthVal);
-    evFiltered=buildEvents(year,month);
-  } else if(period==='week'){
-    const selWeek=document.getElementById('top-week').value;
-    if(!selWeek){buildTopWeeks();return;}
-    evFiltered=buildEvents(year,'all').filter(e=>wKey(e.date)===selWeek);
-  } else if(period==='day'){
-    const selDay=document.getElementById('top-day').value;
-    if(!selDay){buildTopDays();return;}
-    evFiltered=buildEvents(year,'all').filter(e=>dKey(e.date)===selDay);
-  }
-  function topList(role,type){
-    const agg={};
-    evFiltered.filter(e=>e.role===role&&e.type===type).forEach(e=>{agg[e.person]=(agg[e.person]||0)+e.cbm;});
-    return Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,n);
-  }
-  function topListTotal(role){
-    const agg={};
-    evFiltered.filter(e=>e.role===role).forEach(e=>{agg[e.person]=(agg[e.person]||0)+e.cbm;});
-    return Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,n);
-  }
-  const role = currentTopRole;
-  const cats=[
-    {title:'🟢 IN — Top CBM',data:topList(role,'IN'),color:'var(--teal-m)'},
-    {title:'🔴 OUT — Top CBM',data:topList(role,'OUT'),color:'var(--coral-m)'},
-    {title:'📊 Total (IN+OUT)',data:topListTotal(role),color:'var(--purple-m)'},
-  ];
-  const grid=document.getElementById('top-grid');
-  // Update grid columns
-  grid.style.gridTemplateColumns='repeat(3,1fr)';
-  grid.innerHTML=cats.map(cat=>{
+  const role=currentTopRole;
+  if(period==='year')evFiltered=buildEvents(year,'all');
+  else if(period==='month'){const mv=document.getElementById('top-month').value;evFiltered=buildEvents(year,mv==='all'?'all':parseInt(mv));}
+  else if(period==='week'){const sw=document.getElementById('top-week').value;if(!sw){buildTopWeeks();return;}evFiltered=buildEvents(year,'all').filter(e=>wKey(e.date)===sw);}
+  else{const sd=document.getElementById('top-day').value;if(!sd){buildTopDays();return;}evFiltered=buildEvents(year,'all').filter(e=>dKey(e.date)===sd);}
+  function topList(type){const agg={};evFiltered.filter(e=>e.role===role&&e.type===type).forEach(e=>{agg[e.person]=(agg[e.person]||0)+e.cbm;});return Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,n);}
+  function topListTotal(){const agg={};evFiltered.filter(e=>e.role===role).forEach(e=>{agg[e.person]=(agg[e.person]||0)+e.cbm;});return Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,n);}
+  const cats=[{title:'🟢 IN — Top CBM',data:topList('IN'),color:'var(--teal-m)'},{title:'🔴 OUT — Top CBM',data:topList('OUT'),color:'var(--coral-m)'},{title:'📊 Total (IN+OUT)',data:topListTotal(),color:'var(--purple-m)'}];
+  document.getElementById('top-grid').innerHTML=cats.map(cat=>{
     const max=cat.data[0]?cat.data[0][1]:1;
     const rows=cat.data.map(([name,val],i)=>{
       const rankClass=i===0?'r1':i===1?'r2':i===2?'r3':'rn';
       const pct=Math.round(val/max*100);
-      return`<div class="top-row">
-        <div class="top-rank ${rankClass}">${i+1}</div>
-        <div style="flex:1;min-width:0">
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <span class="top-name">${name}</span>
-            <span class="top-val" style="color:${cat.color}">${val.toFixed(2)}</span>
-          </div>
-          <div class="top-bar"><div class="top-bar-fill" style="width:${pct}%;background:${cat.color}"></div></div>
-        </div>
-      </div>`;
+      return`<div class="top-row"><div class="top-rank ${rankClass}">${i+1}</div><div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;align-items:center"><span class="top-name">${name}</span><span class="top-val" style="color:${cat.color}">${val.toFixed(2)}</span></div><div class="top-bar"><div class="top-bar-fill" style="width:${pct}%;background:${cat.color}"></div></div></div></div>`;
     }).join('');
     return`<div class="top-card"><div class="top-title">${cat.title}</div>${rows||'<div style="color:var(--text3);font-size:12px">Không có dữ liệu</div>'}</div>`;
   }).join('');
 }
-let currentTopRole='Tally';
-function switchTopRole(r){
-  currentTopRole=r;
-  document.querySelectorAll('#panel-top .stab').forEach((b,i)=>b.classList.toggle('active',['Tally','Forklift'][i]===r));
-  renderTop();
-}
-
 
 // ── DETAIL ────────────────────────────────────────────────────────────────────
 function renderDetail(){
@@ -731,17 +918,23 @@ function renderDetail(){
   const yearF=document.getElementById('det-year').value;
   filteredRows=entries.filter(([pm,rec])=>{
     if(detailFilter!=='all'&&getStatus(rec)!==detailFilter)return false;
-    if(search){const hay=[pm,rec.inTally,rec.outTally,rec.inUser,rec.outUser].filter(Boolean).join(' ').toLowerCase();if(!hay.includes(search))return false;}
-    if(yearF!=='all'){const y=parseInt(yearF);const dates=[rec.inTallyTime,rec.outTallyTime,rec.inDate,rec.outDate].map(parseDate).filter(Boolean);if(!dates.some(d=>d.getFullYear()===y))return false;}
+    if(search){const hay=[pm,rec.it||rec.inTally,rec.ot||rec.outTally,rec.iu||rec.inUser,rec.ou||rec.outUser].filter(Boolean).join(' ').toLowerCase();if(!hay.includes(search))return false;}
+    if(yearF!=='all'){const y=parseInt(yearF);const dates=[rec.ii||rec.inTallyTime,rec.oi||rec.outTallyTime,rec.id||rec.inDate,rec.od||rec.outDate].map(parseDate).filter(Boolean);if(!dates.some(d=>d.getFullYear()===y))return false;}
     return true;
   });
   filteredRows.sort((a,b)=>{
     const[pa,ra]=a,[pb,rb]=b;let va,vb;
     if(detailSortCol==='pm'){va=pa;vb=pb;}
     else if(detailSortCol==='status'){va=getStatus(ra);vb=getStatus(rb);}
-    else if(detailSortCol==='cbm'){va=ra.cbm||0;vb=rb.cbm||0;}
-    else if(['inTallyTime','outTallyTime','inDate','outDate'].includes(detailSortCol)){va=parseDate(ra[detailSortCol])||new Date(0);vb=parseDate(rb[detailSortCol])||new Date(0);}
-    else{va=ra[detailSortCol]||'';vb=rb[detailSortCol]||'';}
+    else if(detailSortCol==='cbm'){va=ra.c||ra.cbm||0;vb=rb.c||rb.cbm||0;}
+    else if(['inTallyTime','outTallyTime','inDate','outDate'].includes(detailSortCol)){
+      const km={inTallyTime:'ii',outTallyTime:'oi',inDate:'id',outDate:'od'};
+      va=parseDate(ra[km[detailSortCol]]||ra[detailSortCol])||new Date(0);
+      vb=parseDate(rb[km[detailSortCol]]||rb[detailSortCol])||new Date(0);
+    } else {
+      const km={inTally:'it',outTally:'ot',inUser:'iu',outUser:'ou'};
+      va=ra[km[detailSortCol]]||ra[detailSortCol]||'';vb=rb[km[detailSortCol]]||rb[detailSortCol]||'';
+    }
     if(va<vb)return detailSortDir==='asc'?-1:1;if(va>vb)return detailSortDir==='asc'?1:-1;return 0;
   });
   detailPage=1;renderDetailPage();
@@ -753,8 +946,8 @@ function renderDetailPage(){
   let h='';
   slice.forEach(([pm,rec])=>{
     const s=getStatus(rec);
-    const bg=s==='in-only'?'background:#fffbf0':s==='out-only'?'background:#fff5f5':s==='empty'?'background:#fafafa':'';
-    h+=`<tr style="${bg}">
+    const bg=s==='in-only'?'style="background:#fffbf0"':s==='out-only'?'style="background:#fff5f5"':s==='empty'?'style="background:#fafafa"':'';
+    h+=`<tr ${bg}>
       <td style="font-family:monospace;font-size:11px">${pm}</td>
       <td>${statusLabel(s)}</td>
       <td style="text-align:right">${(rec.c||rec.cbm)?(rec.c||rec.cbm).toFixed(2):'—'}</td>
@@ -776,27 +969,6 @@ function nextPage(){const pages=Math.ceil(filteredRows.length/PAGE_SIZE);if(deta
 function sortDetail(col){if(detailSortCol===col)detailSortDir=detailSortDir==='asc'?'desc':'asc';else{detailSortCol=col;detailSortDir='asc';}renderDetail();}
 
 // ── EXPORT ────────────────────────────────────────────────────────────────────
-function saveJSON(){
-  const json=JSON.stringify({db,savedAt:new Date().toISOString()});
-  // Compress with gzip
-  const enc=new TextEncoder().encode(json);
-  const cs=new CompressionStream('gzip');
-  const writer=cs.writable.getWriter();
-  const reader=cs.readable.getReader();
-  writer.write(enc);writer.close();
-  let chunks=[];
-  function pump(){return reader.read().then(({done,value})=>{if(done)return;chunks.push(value);return pump();});}
-  pump().then(()=>{
-    const compressed=new Uint8Array(chunks.reduce((a,b)=>[...a,...b],[]));
-    const blob=new Blob([compressed],{type:'application/gzip'});
-    const a=document.createElement('a');a.href=URL.createObjectURL(blob);
-    a.download='CFS_DB_'+new Date().toISOString().slice(0,10)+'.json.gz';a.click();
-    const rawKB=(enc.length/1024).toFixed(0);
-    const gzKB=(compressed.length/1024).toFixed(0);
-    showStatus('ok',`Đã lưu file JSON (${gzKB} KB nén từ ${rawKB} KB — giảm ${Math.round((1-compressed.length/enc.length)*100)}%)`);
-  });
-}
-
 function exportExcel(){
   const year=parseInt(document.getElementById('sel-year').value);
   const wb=XLSX.utils.book_new();
@@ -812,418 +984,30 @@ function buildExportData(period,role,year){
   const events=buildEvents(year,'all').filter(e=>e.role===role);
   const getPK=e=>period==='day'?dKey(e.date):period==='week'?wKey(e.date):mKey(e.date);
   const pSet=new Set(events.map(getPK));
-  const periods=[...pSet].sort().map(k=>{
-    let label=k;
-    if(period==='day')label=k.slice(8)+'/'+k.slice(5,7);
-    else if(period==='week')label=k;
-    else label='Tháng '+parseInt(k.slice(5));
-    return{key:k,label};
-  });
+  const periods=[...pSet].sort().map(k=>{let label=k;if(period==='day')label=k.slice(8)+'/'+k.slice(5,7);else if(period==='week')label=k;else label='Tháng '+parseInt(k.slice(5));return{key:k,label};});
   const agg={};
-  events.forEach(e=>{
-    if(!agg[e.person])agg[e.person]={};
-    const pk=getPK(e);
-    if(!agg[e.person][pk])agg[e.person][pk]={in:0,out:0};
-    if(e.type==='IN')agg[e.person][pk].in+=e.cbm;else agg[e.person][pk].out+=e.cbm;
-  });
+  events.forEach(e=>{if(!agg[e.person])agg[e.person]={};const pk=getPK(e);if(!agg[e.person][pk])agg[e.person][pk]={in:0,out:0};if(e.type==='IN')agg[e.person][pk].in+=e.cbm;else agg[e.person][pk].out+=e.cbm;});
   const persons=Object.keys(agg).sort();
   const rows=[];
   const h1=['Nhân viên'];periods.forEach(p=>{h1.push(p.label,'','');});h1.push('Tổng','','');rows.push(h1);
   const h2=[''];periods.forEach(()=>{h2.push('IN','OUT','Total');});h2.push('IN','OUT','Total');rows.push(h2);
   const grand={in:0,out:0};
-  persons.forEach(p=>{
-    const data=agg[p];const row=[p];let pi=0,po=0;
-    periods.forEach(({key})=>{const d=data[key]||{in:0,out:0};row.push(d.in?+d.in.toFixed(2):'',d.out?+d.out.toFixed(2):'',d.in+d.out?+(d.in+d.out).toFixed(2):'');pi+=d.in;po+=d.out;});
-    row.push(+pi.toFixed(2),+po.toFixed(2),+(pi+po).toFixed(2));rows.push(row);grand.in+=pi;grand.out+=po;
-  });
-  const sr=[`Tổng ${role}`];
-  periods.forEach(({key})=>{let si=0,so=0;persons.forEach(p=>{const d=(agg[p]||{})[key]||{in:0,out:0};si+=d.in;so+=d.out;});sr.push(+si.toFixed(2),+so.toFixed(2),+(si+so).toFixed(2));});
-  sr.push(+grand.in.toFixed(2),+grand.out.toFixed(2),+(grand.in+grand.out).toFixed(2));rows.push(sr);
+  persons.forEach(p=>{const data=agg[p];const row=[p];let pi=0,po=0;periods.forEach(({key})=>{const d=data[key]||{in:0,out:0};row.push(d.in?+d.in.toFixed(2):'',d.out?+d.out.toFixed(2):'',d.in+d.out?+(d.in+d.out).toFixed(2):'');pi+=d.in;po+=d.out;});row.push(+pi.toFixed(2),+po.toFixed(2),+(pi+po).toFixed(2));rows.push(row);grand.in+=pi;grand.out+=po;});
+  const sr=[`Tổng ${role}`];periods.forEach(({key})=>{let si=0,so=0;persons.forEach(p=>{const d=(agg[p]||{})[key]||{in:0,out:0};si+=d.in;so+=d.out;});sr.push(+si.toFixed(2),+so.toFixed(2),+(si+so).toFixed(2));});sr.push(+grand.in.toFixed(2),+grand.out.toFixed(2),+(grand.in+grand.out).toFixed(2));rows.push(sr);
   return rows;
 }
 function exportDetailExcel(){
   const rows=[['Pallet Master Code','Trạng thái','CBM','Tally IN','Tally In Time','Tally OUT','Tally Out Time','Forklift IN','In Date','Forklift OUT','Out Date']];
   const fdt=v=>{const d=parseDate(v);return d?p2(d.getDate())+'/'+p2(d.getMonth()+1)+'/'+d.getFullYear()+' '+p2(d.getHours())+':'+p2(d.getMinutes()):'';};
   filteredRows.forEach(([pm,rec])=>{
-    const s=getStatus(rec);
-    const label=s==='full'?'Đủ IN+OUT':s==='in-only'?'Chờ OUT':s==='out-only'?'Thiếu IN':'Trống';
+    const s=getStatus(rec);const label=s==='full'?'Đủ IN+OUT':s==='in-only'?'Chờ OUT':s==='out-only'?'Thiếu IN':'Trống';
     rows.push([pm,label,(rec.c||rec.cbm)||0,rec.it||rec.inTally||'',fdt(rec.ii||rec.inTallyTime),rec.ot||rec.outTally||'',fdt(rec.oi||rec.outTallyTime),rec.iu||rec.inUser||'',fdt(rec.id||rec.inDate),rec.ou||rec.outUser||'',fdt(rec.od||rec.outDate)]);
   });
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Chi tiết pallet');
   XLSX.writeFile(wb,'ChiTiet_Pallet_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
-function showDriveModal(){
-  document.getElementById('drive-modal').style.display='flex';
-}
-function hideDriveModal(){
-  document.getElementById('drive-modal').style.display='none';
-  document.getElementById('drive-status').style.display='none';
-}
-async function fetchFromGitHub(){
-  const btn=document.getElementById('btn-fetch-gh');
-  const ds=document.getElementById('drive-status');
-  btn.textContent='⏳ Đang tải...';btn.disabled=true;
-  ds.style.display='block';ds.style.color='var(--amber)';ds.textContent='Đang tải từ GitHub...';
-  try{
-    const res=await fetch('https://raw.githubusercontent.com/cfslongsitcdv-dev/WHZ-RECORD-TALLY-FORKLIFT/main/data.json.gz?t='+Date.now(),{mode:'cors',cache:'no-cache'});
-    if(!res.ok)throw new Error('HTTP '+res.status);
-    const buf=await res.arrayBuffer();
-    const bytes=new Uint8Array(buf);
-    btn.textContent='⬇ Tải dữ liệu';btn.disabled=false;
-    await parseAndLoadBytes(bytes,ds);
-  }catch(err){
-    btn.textContent='⬇ Tải dữ liệu';btn.disabled=false;
-    ds.style.color='var(--coral)';ds.textContent='❌ '+err.message;
-  }
-}
-async function parseAndLoadBytes(bytes,ds){
-  ds.textContent='Đang xử lý dữ liệu...';
-  return new Promise((resolve,reject)=>{
-    const workerCode=`
-      self.onmessage=async function(e){
-        try{
-          let bytes=new Uint8Array(e.data);
-          if(bytes[0]===0x1f&&bytes[1]===0x8b){
-            const ds=new DecompressionStream('gzip');
-            const writer=ds.writable.getWriter();
-            const reader=ds.readable.getReader();
-            writer.write(bytes);writer.close();
-            let chunks=[];
-            while(true){const {done,value}=await reader.read();if(done)break;chunks.push(value);}
-            const all=new Uint8Array(chunks.reduce((a,b)=>{const c=new Uint8Array(a.length+b.length);c.set(a);c.set(b,a.length);return c;},new Uint8Array(0)));
-            bytes=all;
-          }
-          const text=new TextDecoder().decode(bytes);
-          const parsed=JSON.parse(text);
-          self.postMessage({ok:true,data:parsed});
-        }catch(err){self.postMessage({ok:false,error:err.message});}
-      };
-    `;
-    const blob=new Blob([workerCode],{type:'application/javascript'});
-    const worker=new Worker(URL.createObjectURL(blob));
-    worker.onmessage=e=>{
-      worker.terminate();
-      if(!e.data.ok){reject(new Error(e.data.error));return;}
-      const p=e.data.data;db=p.db||p;
-      ds.style.color='var(--teal)';ds.textContent=`✅ Đã tải ${Object.keys(db).length.toLocaleString()} pallet`;
-      setTimeout(()=>hideDriveModal(),1200);
-      showStatus('ok',`Đã tải: ${Object.keys(db).length.toLocaleString()} pallet`);
-      afterDataChange();
-      resolve();
-    };
-    worker.onerror=e=>{worker.terminate();reject(new Error(e.message));};
-    worker.postMessage(bytes.buffer,[bytes.buffer]);
-  });
-}
-async function fetchFromDrive(){
-  const fileId=document.getElementById('drive-file-id').value.trim();
-  if(!fileId){alert('Vui lòng nhập File ID');return;}
-  localStorage.setItem('driveFileId',fileId);
-  const btn=document.getElementById('btn-fetch-drive');
-  const ds=document.getElementById('drive-status');
-  btn.textContent='⏳ Đang tải...';btn.disabled=true;
-  ds.style.display='block';ds.style.color='var(--amber)';ds.textContent='Đang kết nối Google Drive...';
-  // Use Drive direct download URL
-  const url=`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=AIzaSyD-placeholder`;
-  // Fallback: use export download link (works for public files)
-  // Try multiple Drive URL formats to handle CORS
-  const urls=[
-    `https://drive.google.com/uc?export=download&id=${fileId}&confirm=1`,
-    `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=1`,
-  ];
-  let buf=null;
-  let lastErr='';
-  for(const dlUrl of urls){
-    try{
-      const res=await fetch(dlUrl,{mode:'cors'});
-      if(res.ok){buf=await res.arrayBuffer();break;}
-      lastErr=`HTTP ${res.status}`;
-    }catch(e){lastErr=e.message;}
-  }
-  if(!buf)throw new Error(lastErr+' — Thử dùng nút "Tải JSON" thủ công thay thế');
-  try{
-    const bytes=new Uint8Array(buf);
-    btn.textContent='⬇ Tải từ Drive';btn.disabled=false;
-    // Parse same as loadJSON
-    if(bytes[0]===0x1f&&bytes[1]===0x8b){
-      const ds2=new DecompressionStream('gzip');
-      const writer=ds2.writable.getWriter();
-      const reader=ds2.readable.getReader();
-      writer.write(bytes);writer.close();
-      let chunks=[];
-      function pump(){return reader.read().then(({done,value})=>{if(done)return;chunks.push(value);return pump();});}
-      await pump();
-      const decoded=new TextDecoder().decode(new Uint8Array(chunks.reduce((a,b)=>[...a,...b],[])));
-      const p=JSON.parse(decoded);db=p.db||p;
-    } else {
-      const text=new TextDecoder().decode(bytes);
-      const p=JSON.parse(text);db=p.db||p;
-    }
-    ds.style.color='var(--teal)';ds.textContent=`✅ Đã tải ${Object.keys(db).length.toLocaleString()} pallet từ Drive`;
-    setTimeout(()=>hideDriveModal(),1200);
-    showStatus('ok',`Đã tải từ Google Drive: ${Object.keys(db).length.toLocaleString()} pallet`);
-    afterDataChange();
-  }catch(err){
-    btn.textContent='⬇ Tải từ Drive';btn.disabled=false;
-    ds.style.color='var(--coral)';ds.textContent='❌ Lỗi: '+err.message;
-  }
-}
-
-// ── AUTH ──────────────────────────────────────────────────────────────────────
-// Default accounts stored in localStorage (hashed passwords)
-const STORAGE_KEY = 'cfs_users';
-let currentUser = null;
-let resetTargetUser = null;
-
-async function sha256(str) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
-  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
-}
-
-function getUsers() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch(e) {}
-  return null;
-}
-
-async function initUsers() {
-  if (!getUsers()) {
-    // Create default admin account
-    const hash = await sha256('admin123');
-    const users = [{ username: 'admin', hash, isAdmin: true }];
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
-  }
-}
-
-function saveUsers(users) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
-}
-
-async function doLogin() {
-  const username = document.getElementById('auth-user').value.trim();
-  const password = document.getElementById('auth-pass').value;
-  if (!username || !password) return;
-  const users = getUsers() || [];
-  const hash = await sha256(password);
-  const user = users.find(u => u.username === username && u.hash === hash);
-  if (!user) {
-    document.getElementById('auth-err').style.display = 'block';
-    return;
-  }
-  currentUser = user;
-  document.getElementById('auth-overlay').style.display = 'none';
-  document.getElementById('user-menu').style.display = '';
-  document.getElementById('user-display').textContent = '👤 ' + user.username;
-  if (user.isAdmin) {
-    document.getElementById('admin-link').style.display = '';
-  }
-}
-
-function doLogout() {
-  currentUser = null;
-  document.getElementById('auth-overlay').style.display = 'flex';
-  document.getElementById('user-menu').style.display = 'none';
-  document.getElementById('user-dropdown').classList.remove('open');
-  document.getElementById('auth-user').value = '';
-  document.getElementById('auth-pass').value = '';
-  document.getElementById('auth-err').style.display = 'none';
-}
-
-function toggleUserMenu() {
-  document.getElementById('user-dropdown').classList.toggle('open');
-}
-document.addEventListener('click', e => {
-  if (!e.target.closest('.user-menu')) {
-    document.getElementById('user-dropdown')?.classList.remove('open');
-  }
-});
-
-// Enter key on login
-document.addEventListener('DOMContentLoaded', async () => {
-  await initUsers();
-  ['auth-user','auth-pass'].forEach(id => {
-    document.getElementById(id).addEventListener('keydown', e => {
-      if (e.key === 'Enter') doLogin();
-    });
-  });
-});
-
-// CHANGE PASSWORD
-async function doChangePw() {
-  const oldPw = document.getElementById('chpw-old').value;
-  const newPw = document.getElementById('chpw-new').value;
-  const confirm = document.getElementById('chpw-confirm').value;
-  const errEl = document.getElementById('chpw-err');
-  errEl.textContent = '';
-  if (!oldPw || !newPw || !confirm) { errEl.textContent = 'Vui lòng điền đầy đủ'; return; }
-  if (newPw !== confirm) { errEl.textContent = 'Mật khẩu mới không khớp'; return; }
-  if (newPw.length < 6) { errEl.textContent = 'Mật khẩu tối thiểu 6 ký tự'; return; }
-  const oldHash = await sha256(oldPw);
-  if (oldHash !== currentUser.hash) { errEl.textContent = 'Mật khẩu hiện tại không đúng'; return; }
-  const newHash = await sha256(newPw);
-  const users = getUsers();
-  const idx = users.findIndex(u => u.username === currentUser.username);
-  users[idx].hash = newHash;
-  currentUser.hash = newHash;
-  saveUsers(users);
-  closeModal('modal-chpw');
-  showStatus('ok', 'Đã đổi mật khẩu thành công');
-}
-
-// USER MANAGEMENT (admin only)
-function openUserMgmt() {
-  renderUserTable();
-  openModal('modal-users');
-}
-function renderUserTable() {
-  const users = getUsers() || [];
-  const tbody = document.getElementById('user-table-body');
-  tbody.innerHTML = users.map(u => `
-    <tr>
-      <td style="font-weight:500">${u.username}</td>
-      <td>${u.isAdmin ? '<span class="badge-admin">Admin</span>' : '<span class="badge-user">User</span>'}</td>
-      <td style="display:flex;gap:6px">
-        ${u.username !== currentUser.username ? `
-          <button class="btn btn-sm" style="font-size:11px;padding:3px 8px" onclick="openReset('${u.username}')">Reset PW</button>
-          ${!u.isAdmin || users.filter(x=>x.isAdmin).length > 1 ? `<button class="btn btn-sm" style="font-size:11px;padding:3px 8px;color:var(--coral)" onclick="deleteUser('${u.username}')">Xóa</button>` : ''}
-        ` : '<span style="font-size:11px;color:var(--text3)">Tài khoản hiện tại</span>'}
-      </td>
-    </tr>
-  `).join('');
-}
-async function doAddUser() {
-  const username = document.getElementById('new-user-name').value.trim();
-  const password = document.getElementById('new-user-pass').value;
-  const isAdmin = document.getElementById('new-user-admin').checked;
-  const errEl = document.getElementById('new-user-err');
-  errEl.textContent = '';
-  if (!username || !password) { errEl.textContent = 'Vui lòng điền đầy đủ'; return; }
-  if (password.length < 6) { errEl.textContent = 'Mật khẩu tối thiểu 6 ký tự'; return; }
-  const users = getUsers() || [];
-  if (users.find(u => u.username === username)) { errEl.textContent = 'Username đã tồn tại'; return; }
-  const hash = await sha256(password);
-  users.push({ username, hash, isAdmin });
-  saveUsers(users);
-  document.getElementById('new-user-name').value = '';
-  document.getElementById('new-user-pass').value = '';
-  document.getElementById('new-user-admin').checked = false;
-  renderUserTable();
-  showStatus('ok', `Đã thêm tài khoản: ${username}`);
-}
-function deleteUser(username) {
-  if (!confirm(`Xóa tài khoản "${username}"?`)) return;
-  const users = getUsers().filter(u => u.username !== username);
-  saveUsers(users);
-  renderUserTable();
-}
-function openReset(username) {
-  resetTargetUser = username;
-  document.getElementById('reset-username').textContent = username;
-  document.getElementById('reset-pass').value = '';
-  document.getElementById('reset-err').textContent = '';
-  closeModal('modal-users');
-  openModal('modal-reset');
-}
-async function doResetPw() {
-  const newPw = document.getElementById('reset-pass').value;
-  const errEl = document.getElementById('reset-err');
-  if (!newPw || newPw.length < 6) { errEl.textContent = 'Mật khẩu tối thiểu 6 ký tự'; return; }
-  const hash = await sha256(newPw);
-  const users = getUsers();
-  const idx = users.findIndex(u => u.username === resetTargetUser);
-  users[idx].hash = hash;
-  saveUsers(users);
-  closeModal('modal-reset');
-  openModal('modal-users');
-  renderUserTable();
-  showStatus('ok', `Đã reset mật khẩu cho: ${resetTargetUser}`);
-}
-
-function openModal(id) { document.getElementById(id).classList.add('open'); }
-function closeModal(id) {
-  document.getElementById(id).classList.remove('open');
-  // Clear inputs
-  document.querySelectorAll(`#${id} input`).forEach(i => i.value = '');
-  const err = document.querySelector(`#${id} .modal-err`);
-  if (err) err.textContent = '';
-}
 
 function showStatus(type,msg){const s=document.getElementById('sbar');s.className='sbar '+type;s.innerHTML=`<div class="sdot"></div>${msg}`;s.classList.remove('hidden');}
 </script>
-
-<!-- AUTH OVERLAY -->
-<div class="auth-overlay" id="auth-overlay">
-  <div class="auth-card">
-    <div class="auth-logo"><div class="logo-dot"></div>CFS Sản Lượng</div>
-    <div class="auth-field">
-      <label>Tên đăng nhập</label>
-      <input type="text" id="auth-user" placeholder="username" autocomplete="username">
-    </div>
-    <div class="auth-field">
-      <label>Mật khẩu</label>
-      <input type="password" id="auth-pass" placeholder="••••••••" autocomplete="current-password">
-    </div>
-    <div class="auth-err" id="auth-err">Tên đăng nhập hoặc mật khẩu không đúng</div>
-    <button class="btn btn-purple" style="width:100%;padding:10px" onclick="doLogin()">Đăng nhập</button>
-  </div>
-</div>
-
-<!-- CHANGE PASSWORD MODAL -->
-<div class="modal-overlay" id="modal-chpw">
-  <div class="modal-box">
-    <div class="modal-title">🔑 Đổi mật khẩu</div>
-    <div class="modal-field"><label>Mật khẩu hiện tại</label><input type="password" id="chpw-old" placeholder="••••••••"></div>
-    <div class="modal-field"><label>Mật khẩu mới</label><input type="password" id="chpw-new" placeholder="••••••••"></div>
-    <div class="modal-field"><label>Xác nhận mật khẩu mới</label><input type="password" id="chpw-confirm" placeholder="••••••••"></div>
-    <div class="modal-err" id="chpw-err"></div>
-    <div class="modal-actions">
-      <button class="btn btn-sm" onclick="closeModal('modal-chpw')">Hủy</button>
-      <button class="btn btn-sm btn-purple" onclick="doChangePw()">Lưu</button>
-    </div>
-  </div>
-</div>
-
-<!-- ADMIN: USER MANAGEMENT MODAL -->
-<div class="modal-overlay" id="modal-users">
-  <div class="modal-box" style="width:520px">
-    <div class="modal-title">👥 Quản lý tài khoản</div>
-    <table class="user-table">
-      <thead><tr><th>Username</th><th>Vai trò</th><th>Thao tác</th></tr></thead>
-      <tbody id="user-table-body"></tbody>
-    </table>
-    <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
-      <div style="font-size:13px;font-weight:500;margin-bottom:10px">Thêm tài khoản mới</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-        <div class="modal-field" style="margin:0"><label>Username</label><input type="text" id="new-user-name" placeholder="username"></div>
-        <div class="modal-field" style="margin:0"><label>Mật khẩu</label><input type="password" id="new-user-pass" placeholder="••••••••"></div>
-      </div>
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <label style="font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer">
-          <input type="checkbox" id="new-user-admin"> Admin
-        </label>
-      </div>
-      <div class="modal-err" id="new-user-err"></div>
-      <button class="btn btn-sm btn-teal" onclick="doAddUser()">+ Thêm tài khoản</button>
-    </div>
-    <div class="modal-actions"><button class="btn btn-sm" onclick="closeModal('modal-users')">Đóng</button></div>
-  </div>
-</div>
-
-<!-- ADMIN: RESET PASSWORD MODAL -->
-<div class="modal-overlay" id="modal-reset">
-  <div class="modal-box">
-    <div class="modal-title">🔄 Reset mật khẩu</div>
-    <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Reset mật khẩu cho: <strong id="reset-username"></strong></div>
-    <div class="modal-field"><label>Mật khẩu mới</label><input type="password" id="reset-pass" placeholder="••••••••"></div>
-    <div class="modal-err" id="reset-err"></div>
-    <div class="modal-actions">
-      <button class="btn btn-sm" onclick="closeModal('modal-reset')">Hủy</button>
-      <button class="btn btn-sm btn-purple" onclick="doResetPw()">Reset</button>
-    </div>
-  </div>
-</div>
-
 </body>
 </html>
