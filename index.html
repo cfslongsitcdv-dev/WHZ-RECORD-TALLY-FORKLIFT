@@ -824,7 +824,7 @@ async function fetchFromGitHub(){
     try{
       const controller=new AbortController();
       const timeout=setTimeout(()=>controller.abort(),15000);
-      const res=await fetch('https://raw.githubusercontent.com/cfslongsitcdv-dev/WHZ-RECORD-TALLY-FORKLIFT/main/data.json.gz?t='+Date.now());
+      const res=await fetch('https://raw.githubusercontent.com/cfslongsitcdv-dev/WHZ-RECORD-TALLY-FORKLIFT/main/data.json.gz?t='+Date.now(),{mode:'cors',cache:'no-cache'});
       clearTimeout(timeout);
       if(res.ok){
         const buf=await res.arrayBuffer();
