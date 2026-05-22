@@ -809,22 +809,37 @@ async function fetchFromGitHub(){
   const btn=document.getElementById('btn-fetch-gh');
   const ds=document.getElementById('drive-status');
   btn.textContent='⏳ Đang tải...';btn.disabled=true;
-  ds.style.display='block';ds.style.color='var(--amber)';ds.textContent='Đang kết nối Google Drive...';
+  ds.style.display='block';ds.style.color='var(--amber)';
+  // Animated status
+  let dots=0;
+  const timer=setInterval(()=>{
+    dots=(dots+1)%4;
+    ds.textContent='Đang kết nối Google Drive'+'.'.repeat(dots);
+  },600);
   try{
+    // 60s timeout
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),60000);
     const url='https://script.google.com/macros/s/AKfycbzZVV51scLBJQZTkNDMcr8mI4C8avDd6H_PAfRdO0_rC0o5fce5yB9uq1iLch6Q_Ac/exec?t='+Date.now();
-    const res=await fetch(url);
+    const res=await fetch(url,{signal:controller.signal});
+    clearTimeout(timeout);
     if(!res.ok)throw new Error('HTTP '+res.status);
+    ds.textContent='Đang xử lý dữ liệu...';
     const json=await res.json();
     if(!json.ok)throw new Error(json.error||'Apps Script lỗi');
+    ds.textContent=`Đang giải mã (${(json.size/1024).toFixed(0)} KB)...`;
     // Decode base64 → Uint8Array
     const binary=atob(json.data);
     const bytes=new Uint8Array(binary.length);
     for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+    clearInterval(timer);
     btn.textContent='⬇ Tải từ Drive';btn.disabled=false;
     await parseAndLoadBytes(bytes,ds);
   }catch(err){
+    clearInterval(timer);
     btn.textContent='⬇ Tải từ Drive';btn.disabled=false;
-    ds.style.color='var(--coral)';ds.textContent='❌ '+err.message;
+    const msg=err.name==='AbortError'?'Timeout 60s — thử lại hoặc dùng file thủ công':err.message;
+    ds.style.color='var(--coral)';ds.textContent='❌ '+msg;
   }
 }
 async function parseAndLoadBytes(bytes,ds){
