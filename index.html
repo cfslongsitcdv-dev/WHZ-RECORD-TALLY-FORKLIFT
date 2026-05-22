@@ -185,13 +185,13 @@ th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
 <div id="drive-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:999;align-items:center;justify-content:center">
   <div style="background:var(--surface);border-radius:var(--rl);padding:24px;width:480px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,.2)">
     <div style="font-size:15px;font-weight:600;margin-bottom:6px">☁️ Tải dữ liệu mới nhất</div>
-    <div style="font-size:12px;color:var(--text2);margin-bottom:16px">Tải file dữ liệu từ GitHub (tự động) hoặc thủ công từ máy tính</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:16px">Tải dữ liệu từ GitHub hoặc từ file trên máy tính</div>
 
     <!-- Option 1: Auto from GitHub -->
     <div style="background:var(--teal-l);border:1px solid var(--teal-m);border-radius:var(--r);padding:12px 14px;margin-bottom:10px">
-      <div style="font-size:12px;font-weight:600;color:var(--teal);margin-bottom:6px">⚡ Tự động — Tải từ Google Drive</div>
-      <div style="font-size:11px;color:var(--teal);margin-bottom:8px">Luôn lấy dữ liệu mới nhất từ Google Drive</div>
-      <button class="btn btn-teal btn-sm" onclick="fetchFromGitHub()" id="btn-fetch-gh" style="width:100%">⬇ Tải từ Drive</button>
+      <div style="font-size:12px;font-weight:600;color:var(--teal);margin-bottom:6px">⚡ Tự động — Tải từ GitHub</div>
+      <div style="font-size:11px;color:var(--teal);margin-bottom:8px">Luôn lấy dữ liệu mới nhất, nhanh 1-2 giây</div>
+      <button class="btn btn-teal btn-sm" onclick="fetchFromGitHub()" id="btn-fetch-gh" style="width:100%">⬇ Tải dữ liệu</button>
     </div>
 
     <!-- Option 2: Manual file -->
@@ -311,9 +311,7 @@ let db = {};
 window.addEventListener('DOMContentLoaded',()=>{
   document.getElementById('btn-drive').style.display='';
   // Default File ID (pre-configured)
-  const DEFAULT_FILE_ID='1o-hCjDc6wh8N8F529DE_2v0nxEBLQMqT';
-  const saved=localStorage.getItem('driveFileId')||DEFAULT_FILE_ID;
-  document.getElementById('drive-file-id').value=saved;
+  // File ID pre-configured, no input needed
 });
 let currentPeriod = 'day';
 let currentRole = 'Tally';
@@ -798,8 +796,6 @@ function exportDetailExcel(){
 }
 function showDriveModal(){
   document.getElementById('drive-modal').style.display='flex';
-  const saved=localStorage.getItem('driveFileId');
-  if(saved)document.getElementById('drive-file-id').value=saved;
 }
 function hideDriveModal(){
   document.getElementById('drive-modal').style.display='none';
@@ -809,53 +805,17 @@ async function fetchFromGitHub(){
   const btn=document.getElementById('btn-fetch-gh');
   const ds=document.getElementById('drive-status');
   btn.textContent='⏳ Đang tải...';btn.disabled=true;
-  ds.style.display='block';ds.style.color='var(--amber)';
-  // Animated status
-  let dots=0;
-  const timer=setInterval(()=>{
-    dots=(dots+1)%4;
-    ds.textContent='Đang kết nối Google Drive'+'.'.repeat(dots);
-  },600);
+  ds.style.display='block';ds.style.color='var(--amber)';ds.textContent='Đang tải từ GitHub...';
   try{
-    // 60s timeout
-    // Try GitHub first (fast, no CORS), fallback to Apps Script
-    let bytes=null;
-    ds.textContent='Đang tải từ GitHub...';
-    try{
-      const controller=new AbortController();
-      const timeout=setTimeout(()=>controller.abort(),15000);
-      const res=await fetch('https://raw.githubusercontent.com/cfslongsitcdv-dev/WHZ-RECORD-TALLY-FORKLIFT/main/data.json.gz?t='+Date.now(),{mode:'cors',cache:'no-cache'});
-      clearTimeout(timeout);
-      if(res.ok){
-        const buf=await res.arrayBuffer();
-        bytes=new Uint8Array(buf);
-        ds.textContent='GitHub OK, đang xử lý...';
-      }
-    }catch(e){}
-    // Fallback: Apps Script
-    if(!bytes){
-      ds.textContent='Đang kết nối Google Drive...';
-      const controller=new AbortController();
-      const timeout=setTimeout(()=>controller.abort(),60000);
-      const res=await fetch('https://script.google.com/macros/s/AKfycbzZVV51scLBJQZTkNDMcr8mI4C8avDd6H_PAfRdO0_rC0o5fce5yB9uq1iLch6Q_Ac/exec?t='+Date.now(),{signal:controller.signal});
-      clearTimeout(timeout);
-      if(!res.ok)throw new Error('HTTP '+res.status);
-      ds.textContent='Đang xử lý dữ liệu...';
-      const json=await res.json();
-      if(!json.ok)throw new Error(json.error||'Apps Script lỗi');
-      ds.textContent=`Đang giải mã (${(json.size/1024).toFixed(0)} KB)...`;
-      const binary=atob(json.data);
-      bytes=new Uint8Array(binary.length);
-      for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
-    }
-    clearInterval(timer);
-    btn.textContent='⬇ Tải từ Drive';btn.disabled=false;
+    const res=await fetch('https://raw.githubusercontent.com/cfslongsitcdv-dev/WHZ-RECORD-TALLY-FORKLIFT/main/data.json.gz?t='+Date.now(),{mode:'cors',cache:'no-cache'});
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const buf=await res.arrayBuffer();
+    const bytes=new Uint8Array(buf);
+    btn.textContent='⬇ Tải dữ liệu';btn.disabled=false;
     await parseAndLoadBytes(bytes,ds);
   }catch(err){
-    clearInterval(timer);
-    btn.textContent='⬇ Tải từ Drive';btn.disabled=false;
-    const msg=err.name==='AbortError'?'Timeout 60s — thử lại hoặc dùng file thủ công':err.message;
-    ds.style.color='var(--coral)';ds.textContent='❌ '+msg;
+    btn.textContent='⬇ Tải dữ liệu';btn.disabled=false;
+    ds.style.color='var(--coral)';ds.textContent='❌ '+err.message;
   }
 }
 async function parseAndLoadBytes(bytes,ds){
