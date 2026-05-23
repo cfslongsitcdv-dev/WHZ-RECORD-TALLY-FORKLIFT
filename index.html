@@ -182,8 +182,8 @@ th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
     <div class="auth-logo"><div class="logo-dot"></div>CFS Sản Lượng</div>
     <div class="auth-sub">Đăng nhập để tiếp tục</div>
     <div class="auth-field">
-      <label>Email</label>
-      <input type="email" id="auth-email" placeholder="email@company.com" autocomplete="email">
+      <label>Mã nhân viên</label>
+      <input type="text" id="auth-email" placeholder="Ví dụ: 001, 282..." autocomplete="username">
     </div>
     <div class="auth-field">
       <label>Mật khẩu</label>
@@ -252,7 +252,10 @@ th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
     <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
       <div style="font-size:13px;font-weight:500;margin-bottom:10px">Thêm tài khoản mới</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-        <div class="modal-field" style="margin:0"><label>Email</label><input type="email" id="new-user-email" placeholder="email@company.com"></div>
+        <div class="modal-field" style="margin:0"><label>Mã nhân viên</label><input type="text" id="new-user-email" placeholder="Ví dụ: 001, 282..."></div>
+        <div class="modal-field" style="margin:0"><label>Tên hiển thị</label><input type="text" id="new-user-name" placeholder="Nguyễn Văn A"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
         <div class="modal-field" style="margin:0"><label>Mật khẩu</label><input type="password" id="new-user-pass" placeholder="Tối thiểu 6 ký tự"></div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
@@ -392,6 +395,7 @@ th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
 const SUPABASE_URL = 'https://tblwhztipyzafmzspbcz.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_VNmxzRyygd4qX-NKSDzqJQ_ZK4EMPP8';
 const { createClient } = supabase;
+const EDGE_ADMIN = 'https://tblwhztipyzafmzspbcz.supabase.co/functions/v1/admin-users';
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ── STATE ─────────────────────────────────────────────────────────────────────
@@ -411,13 +415,31 @@ const PAGE_SIZE = 100;
 
 // ── AUTH ──────────────────────────────────────────────────────────────────────
 // Profiles table stores isAdmin flag
+// ── ADMIN API ─────────────────────────────────────────────────────────────────
+async function adminAPI(action, payload = {}) {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) throw new Error('Chưa đăng nhập');
+  const res = await fetch(EDGE_ADMIN, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + session.access_token
+    },
+    body: JSON.stringify({ action, payload })
+  });
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error);
+  return json.data;
+}
+
 async function doLogin() {
-  const email = document.getElementById('auth-email').value.trim();
+  const code = document.getElementById('auth-email').value.trim();
   const pass = document.getElementById('auth-pass').value;
   const errEl = document.getElementById('auth-err');
   const btn = document.getElementById('btn-login');
   errEl.textContent = '';
-  if (!email || !pass) { errEl.textContent = 'Vui lòng điền đầy đủ'; return; }
+  if (!code || !pass) { errEl.textContent = 'Vui lòng điền đầy đủ'; return; }
+  const email = code.includes('@') ? code : code + '@cfs.local';
   btn.textContent = 'Đang đăng nhập...'; btn.disabled = true;
   const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
   btn.textContent = 'Đăng nhập'; btn.disabled = false;
@@ -432,7 +454,8 @@ function onLoggedIn() {
   document.getElementById('auth-overlay').style.display = 'none';
   document.getElementById('user-menu').style.display = '';
   document.getElementById('btn-load').style.display = '';
-  document.getElementById('user-display').textContent = '👤 ' + (currentUser.email.split('@')[0]);
+  const displayName = currentUser.user_metadata?.display_name || currentUser.email.replace('@cfs.local','');
+  document.getElementById('user-display').textContent = '👤 ' + displayName;
   if (isAdmin) {
     document.getElementById('admin-link').classList.remove('hidden');
     document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
@@ -501,38 +524,52 @@ async function openUserMgmt() {
 }
 async function renderUserTable() {
   const tbody = document.getElementById('user-table-body');
-  tbody.innerHTML = '<tr><td colspan="3" style="color:var(--text3);text-align:center;padding:16px">Đang tải...</td></tr>';
-  // Use admin API via service role - need edge function or manual management
-  // For now show current user info and instructions
-  tbody.innerHTML = `
-    <tr>
-      <td style="font-weight:500">${currentUser.email}</td>
-      <td><span class="badge-admin">Admin</span></td>
-      <td><span style="font-size:11px;color:var(--text3)">Tài khoản hiện tại</span></td>
-    </tr>
-    <tr><td colspan="3" style="font-size:11px;color:var(--text3);padding:10px;background:var(--surface2)">
-      💡 Để xem và quản lý toàn bộ user, vào <a href="${SUPABASE_URL.replace('supabase.co','supabase.com')}/dashboard/project/tblwhztipyzafmzspbcz/auth/users" target="_blank" style="color:var(--purple)">Supabase Dashboard → Authentication → Users</a>
-    </td></tr>`;
+  tbody.innerHTML = '<tr><td colspan="4" style="color:var(--text3);text-align:center;padding:16px">Đang tải...</td></tr>';
+  try {
+    const users = await adminAPI('list');
+    tbody.innerHTML = users.map(u => `
+      <tr style="${u.banned?'opacity:.5':''}">
+        <td style="font-weight:500">${u.display_name}</td>
+        <td style="font-size:11px;color:var(--text3)">${u.email.replace('@cfs.local','')}</td>
+        <td>${u.is_admin?'<span class="badge-admin">Admin</span>':'<span class="badge-user">User</span>'}</td>
+        <td style="display:flex;gap:4px;flex-wrap:wrap">
+          ${u.id !== currentUser.id ? `
+            <button class="btn btn-sm" style="font-size:11px;padding:2px 7px" onclick="openReset('${u.id}','${u.display_name}')">🔑 Reset PW</button>
+            <button class="btn btn-sm" style="font-size:11px;padding:2px 7px" onclick="openEditName('${u.id}','${u.display_name}')">✏️ Tên</button>
+            <button class="btn btn-sm" style="font-size:11px;padding:2px 7px;color:${u.banned?'var(--teal)':'var(--coral)'}" onclick="toggleBan('${u.id}',${!u.banned},'${u.display_name}')">${u.banned?'🔓 Mở':'🔒 Khóa'}</button>
+          ` : '<span style="font-size:11px;color:var(--text3)">Tài khoản hiện tại</span>'}
+        </td>
+      </tr>`).join('');
+    // Update table header
+    document.querySelector('#modal-users .user-table thead tr').innerHTML = 
+      '<th>Tên</th><th>Mã</th><th>Vai trò</th><th>Thao tác</th>';
+  } catch(err) {
+    tbody.innerHTML = `<tr><td colspan="4" style="color:var(--coral);padding:16px">❌ ${err.message}</td></tr>`;
+  }
 }
 async function doAddUser() {
-  const email = document.getElementById('new-user-email').value.trim();
+  const code = document.getElementById('new-user-email').value.trim();
+  const displayName = document.getElementById('new-user-name').value.trim();
   const pass = document.getElementById('new-user-pass').value;
   const isAdm = document.getElementById('new-user-admin').checked;
   const errEl = document.getElementById('new-user-err');
   const okEl = document.getElementById('new-user-ok');
   errEl.textContent = ''; okEl.textContent = '';
-  if (!email || !pass) { errEl.textContent = 'Vui lòng điền đầy đủ'; return; }
+  if (!code || !pass) { errEl.textContent = 'Vui lòng điền đầy đủ'; return; }
   if (pass.length < 6) { errEl.textContent = 'Mật khẩu tối thiểu 6 ký tự'; return; }
+  try {
+    await adminAPI('create', { code, display_name: displayName||code, password: pass, is_admin: isAdm });
+    okEl.textContent = `✅ Đã tạo tài khoản: ${code}${displayName?' ('+displayName+')':''}`;
+    document.getElementById('new-user-email').value = '';
+    document.getElementById('new-user-name').value = '';
+    document.getElementById('new-user-pass').value = '';
+    document.getElementById('new-user-admin').checked = false;
+    renderUserTable();
+    return;
+  } catch(err) { errEl.textContent = '❌ ' + err.message; return; }
+  const email = code.includes('@') ? code : code + '@cfs.local';
   // Sign up new user
-  const { data, error } = await sb.auth.signUp({
-    email, password: pass,
-    options: { data: { is_admin: isAdm } }
-  });
-  if (error) { errEl.textContent = error.message; return; }
-  okEl.textContent = `✅ Đã tạo tài khoản: ${email}`;
-  document.getElementById('new-user-email').value = '';
-  document.getElementById('new-user-pass').value = '';
-  document.getElementById('new-user-admin').checked = false;
+
 }
 async function doResetPw() {
   const newPw = document.getElementById('reset-pass').value;
@@ -540,20 +577,41 @@ async function doResetPw() {
   const okEl = document.getElementById('reset-ok');
   errEl.textContent = ''; okEl.textContent = '';
   if (!newPw || newPw.length < 6) { errEl.textContent = 'Mật khẩu tối thiểu 6 ký tự'; return; }
-  // Send reset email
-  const email = document.getElementById('reset-email-display').textContent;
-  const { error } = await sb.auth.resetPasswordForEmail(email);
-  if (error) { errEl.textContent = error.message; return; }
-  okEl.textContent = '✅ Đã gửi email reset mật khẩu!';
-  setTimeout(() => { closeModal('modal-reset'); openModal('modal-users'); }, 1500);
+  try {
+    await adminAPI('reset_password', { user_id: resetTargetId, new_password: newPw });
+    okEl.textContent = '✅ Đã reset mật khẩu thành công!';
+    setTimeout(() => { closeModal('modal-reset'); openModal('modal-users'); renderUserTable(); }, 1500);
+  } catch(err) { errEl.textContent = '❌ ' + err.message; }
 }
-function openReset(email) {
-  document.getElementById('reset-email-display').textContent = email;
+function openReset(userId, displayName) {
+  resetTargetId = userId;
+  document.getElementById('reset-email-display').textContent = displayName;
   document.getElementById('reset-pass').value = '';
   document.getElementById('reset-err').textContent = '';
   document.getElementById('reset-ok').textContent = '';
   closeModal('modal-users');
   openModal('modal-reset');
+}
+
+// Toggle ban
+async function toggleBan(userId, ban, displayName) {
+  if (!confirm(`${ban?'Khóa':'Mở khóa'} tài khoản "${displayName}"?`)) return;
+  try {
+    await adminAPI('toggle_ban', { user_id: userId, ban });
+    showStatus('ok', `${ban?'🔒 Đã khóa':'🔓 Đã mở khóa'}: ${displayName}`);
+    renderUserTable();
+  } catch(err) { showStatus('err', '❌ ' + err.message); }
+}
+
+// Edit display name
+let editNameTargetId = null;
+function openEditName(userId, currentName) {
+  editNameTargetId = userId;
+  const newName = prompt('Tên hiển thị mới:', currentName);
+  if (!newName || newName === currentName) return;
+  adminAPI('update_name', { user_id: userId, display_name: newName })
+    .then(() => { showStatus('ok', '✅ Đã đổi tên thành: ' + newName); renderUserTable(); })
+    .catch(err => showStatus('err', '❌ ' + err.message));
 }
 function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) {
