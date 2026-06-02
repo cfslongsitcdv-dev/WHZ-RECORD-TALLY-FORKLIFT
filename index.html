@@ -927,13 +927,24 @@ function renderTable(year,month){
 
 // ── TOP ───────────────────────────────────────────────────────────────────────
 function switchTopRole(r){currentTopRole=r;document.querySelectorAll('#panel-top .stab').forEach((b,i)=>b.classList.toggle('active',['Tally','Forklift'][i]===r));renderTop();}
-function onTopYearChange(){const p=document.getElementById('top-period').value;if(p==='week')buildTopWeeks();if(p==='day')buildTopDays();renderTop();}
+function onTopYearChange(){const p=document.getElementById('top-period').value;if(p==='month')buildTopMonths();if(p==='week')buildTopWeeks();if(p==='day')buildTopDays();renderTop();}
 function onTopPeriodChange(){
   const p=document.getElementById('top-period').value;
   document.getElementById('top-month').style.display=p==='month'?'':'none';
   document.getElementById('top-week').style.display=p==='week'?'':'none';
   document.getElementById('top-day').style.display=p==='day'?'':'none';
-  if(p==='week')buildTopWeeks();if(p==='day')buildTopDays();renderTop();
+  if(p==='month')buildTopMonths();
+  if(p==='week')buildTopWeeks();
+  if(p==='day')buildTopDays();
+  renderTop();
+}
+function buildTopMonths(){
+  const year=parseInt(document.getElementById('top-year').value);
+  const ev=buildEvents(year,'all');
+  const months=[...new Set(ev.map(e=>e.date.getMonth()+1))].sort((a,b)=>a-b);
+  const mNames=['','Tháng 1','Tháng 2','Tháng 3','Tháng 4','Tháng 5','Tháng 6','Tháng 7','Tháng 8','Tháng 9','Tháng 10','Tháng 11','Tháng 12'];
+  const sel=document.getElementById('top-month');
+  sel.innerHTML='<option value="all">Tất cả tháng</option>'+months.map(m=>`<option value="${m}">${mNames[m]}</option>`).join('');
 }
 function onTopMonthChange(){const p=document.getElementById('top-period').value;if(p==='day')buildTopDays();renderTop();}
 function buildTopWeeks(){const year=parseInt(document.getElementById('top-year').value);const ev=buildEvents(year,'all');const weeks=[...new Set(ev.map(e=>wKey(e.date)))].sort();document.getElementById('top-week').innerHTML=weeks.map(w=>`<option value="${w}">${w.replace('-W','·W')}</option>`).join('');}
