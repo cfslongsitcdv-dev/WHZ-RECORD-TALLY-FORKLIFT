@@ -375,6 +375,7 @@ th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
               <th onclick="sortDetail('inDate')">In Date</th>
               <th onclick="sortDetail('outUser')">Forklift OUT</th>
               <th onclick="sortDetail('outDate')">Out Date</th>
+              <th onclick="sortDetail('supplier')">Supplier</th>
             </tr></thead>
             <tbody id="dtbody"></tbody>
           </table>
@@ -750,7 +751,8 @@ function processExcel(raw, fname) {
     const outUser = (r['Out Uer']||r['Out User']||'').toString().trim() || null;
     const ex = db[pm];
     if (!ex) {
-      db[pm] = { it:inTally, ii:trimDt(inTallyTime), ot:outTally, oi:trimDt(outTallyTime), iu:inUser, id:trimDt(inDate), ou:outUser, od:trimDt(outDate), c:cbm };
+      const supplier = (r['Supplier Name']||'').toString().trim() || null;
+      db[pm] = { it:inTally, ii:trimDt(inTallyTime), ot:outTally, oi:trimDt(outTallyTime), iu:inUser, id:trimDt(inDate), ou:outUser, od:trimDt(outDate), c:cbm, sp:supplier };
       added++;
     } else {
       let ch = false;
@@ -765,6 +767,8 @@ function processExcel(raw, fname) {
       if (!ex.od && !ex.outDate && outDate) { ex.od=trimDt(outDate); ch=true; }
       if (!ex.ou && !ex.outUser && outUser) { ex.ou=outUser; ch=true; }
       if (cbm && cbm!==(ex.c||ex.cbm)) { ex.c=cbm; ch=true; }
+      const supplier = (r['Supplier Name']||'').toString().trim() || null;
+      if (!ex.sp && supplier) { ex.sp=supplier; ch=true; }
       if (ch) updated++; else skipped++;
     }
   });
@@ -996,7 +1000,7 @@ function renderDetail(){
   const yearF=document.getElementById('det-year').value;
   filteredRows=entries.filter(([pm,rec])=>{
     if(detailFilter!=='all'&&getStatus(rec)!==detailFilter)return false;
-    if(search){const hay=[pm,rec.it||rec.inTally,rec.ot||rec.outTally,rec.iu||rec.inUser,rec.ou||rec.outUser].filter(Boolean).join(' ').toLowerCase();if(!hay.includes(search))return false;}
+    if(search){const hay=[pm,rec.it||rec.inTally,rec.ot||rec.outTally,rec.iu||rec.inUser,rec.ou||rec.outUser,rec.sp].filter(Boolean).join(' ').toLowerCase();if(!hay.includes(search))return false;}
     if(yearF!=='all'){const y=parseInt(yearF);const dates=[rec.ii||rec.inTallyTime,rec.oi||rec.outTallyTime,rec.id||rec.inDate,rec.od||rec.outDate].map(parseDate).filter(Boolean);if(!dates.some(d=>d.getFullYear()===y))return false;}
     return true;
   });
@@ -1010,7 +1014,7 @@ function renderDetail(){
       va=parseDate(ra[km[detailSortCol]]||ra[detailSortCol])||new Date(0);
       vb=parseDate(rb[km[detailSortCol]]||rb[detailSortCol])||new Date(0);
     } else {
-      const km={inTally:'it',outTally:'ot',inUser:'iu',outUser:'ou'};
+      const km={inTally:'it',outTally:'ot',inUser:'iu',outUser:'ou',supplier:'sp'};
       va=ra[km[detailSortCol]]||ra[detailSortCol]||'';vb=rb[km[detailSortCol]]||rb[detailSortCol]||'';
     }
     if(va<vb)return detailSortDir==='asc'?-1:1;if(va>vb)return detailSortDir==='asc'?1:-1;return 0;
@@ -1033,6 +1037,7 @@ function renderDetailPage(){
       <td>${rec.ot||rec.outTally||'<span class="ce">—</span>'}</td><td>${fmtDt(rec.oi||rec.outTallyTime)}</td>
       <td>${rec.iu||rec.inUser||'<span class="ce">—</span>'}</td><td>${fmtDt(rec.id||rec.inDate)}</td>
       <td>${rec.ou||rec.outUser||'<span class="ce">—</span>'}</td><td>${fmtDt(rec.od||rec.outDate)}</td>
+      <td>${rec.sp||'<span class="ce">—</span>'}</td>
     </tr>`;
   });
   document.getElementById('dtbody').innerHTML=h;
@@ -1075,11 +1080,11 @@ function buildExportData(period,role,year){
   return rows;
 }
 function exportDetailExcel(){
-  const rows=[['Pallet Master Code','Trạng thái','CBM','Tally IN','Tally In Time','Tally OUT','Tally Out Time','Forklift IN','In Date','Forklift OUT','Out Date']];
+  const rows=[['Pallet Master Code','Trạng thái','CBM','Tally IN','Tally In Time','Tally OUT','Tally Out Time','Forklift IN','In Date','Forklift OUT','Out Date','Supplier']];
   const fdt=v=>{const d=parseDate(v);return d?p2(d.getDate())+'/'+p2(d.getMonth()+1)+'/'+d.getFullYear()+' '+p2(d.getHours())+':'+p2(d.getMinutes()):'';};
   filteredRows.forEach(([pm,rec])=>{
     const s=getStatus(rec);const label=s==='full'?'Đủ IN+OUT':s==='in-only'?'Chờ OUT':s==='out-only'?'Thiếu IN':'Trống';
-    rows.push([pm,label,(rec.c||rec.cbm)||0,rec.it||rec.inTally||'',fdt(rec.ii||rec.inTallyTime),rec.ot||rec.outTally||'',fdt(rec.oi||rec.outTallyTime),rec.iu||rec.inUser||'',fdt(rec.id||rec.inDate),rec.ou||rec.outUser||'',fdt(rec.od||rec.outDate)]);
+    rows.push([pm,label,(rec.c||rec.cbm)||0,rec.it||rec.inTally||'',fdt(rec.ii||rec.inTallyTime),rec.ot||rec.outTally||'',fdt(rec.oi||rec.outTallyTime),rec.iu||rec.inUser||'',fdt(rec.id||rec.inDate),rec.ou||rec.outUser||'',fdt(rec.od||rec.outDate),rec.sp||'']);
   });
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Chi tiết pallet');
   XLSX.writeFile(wb,'ChiTiet_Pallet_'+new Date().toISOString().slice(0,10)+'.xlsx');
