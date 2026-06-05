@@ -376,6 +376,7 @@ th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
               <th onclick="sortDetail('outUser')">Forklift OUT</th>
               <th onclick="sortDetail('outDate')">Out Date</th>
               <th onclick="sortDetail('supplier')">Supplier</th>
+              <th id="th-delete"></th>
             </tr></thead>
             <tbody id="dtbody"></tbody>
           </table>
@@ -460,6 +461,8 @@ function onLoggedIn() {
   if (isAdmin) {
     document.getElementById('admin-link').classList.remove('hidden');
     document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
+    const thDel = document.getElementById('th-delete');
+    if (thDel) thDel.textContent = 'Xóa';
   }
   document.getElementById('fi-excel').addEventListener('change', e => {
     if (e.target.files[0]) loadExcel(e.target.files[0]);
@@ -808,15 +811,30 @@ function getStatus(rec){
   // CBM = 0 → pallet không tồn tại thực → trống
   const cbm=rec.c||rec.cbm||0;
   if(cbm===0)return'empty';
-  const hti=(rec.it||rec.inTally)&&(rec.ii||rec.inTallyTime),hto=(rec.ot||rec.outTally)&&(rec.oi||rec.outTallyTime);
-  const hfi=(rec.iu||rec.inUser)&&(rec.id||rec.inDate),hfo=(rec.ou||rec.outUser)&&(rec.od||rec.outDate);
-  const anyIn=hti||hfi,anyOut=hto||hfo;
-  if(anyIn&&anyOut)return'full';if(anyIn&&!anyOut)return'in-only';if(!anyIn&&anyOut)return'out-only';return'empty';
+  const hasTallyIn  = !!(rec.it||rec.inTally)&&!!(rec.ii||rec.inTallyTime);
+  const hasTallyOut = !!(rec.ot||rec.outTally)&&!!(rec.oi||rec.outTallyTime);
+  const hasFLIn     = !!(rec.iu||rec.inUser)&&!!(rec.id||rec.inDate);
+  const hasFLOut    = !!(rec.ou||rec.outUser)&&!!(rec.od||rec.outDate);
+  const hasOut      = hasTallyOut||hasFLOut;
+  if(!hasTallyIn) return'empty';            // Không có tally IN → trống
+  if(hasTallyIn&&hasOut) return'full';      // Có tally IN + có OUT → đủ
+  if(hasTallyIn&&!hasOut) return'in-only';  // Chờ OUT (bao gồm cả thiếu forklift IN)
+  return'empty';
+}
+function isMissingFLIn(rec){
+  const cbm=rec.c||rec.cbm||0;
+  if(cbm===0) return false;
+  const hasTallyIn = !!(rec.it||rec.inTally)&&!!(rec.ii||rec.inTallyTime);
+  const hasFLIn    = !!(rec.iu||rec.inUser)&&!!(rec.id||rec.inDate);
+  const hasFLOut   = !!(rec.ou||rec.outUser)&&!!(rec.od||rec.outDate);
+  const hasTallyOut= !!(rec.ot||rec.outTally)&&!!(rec.oi||rec.outTallyTime);
+  const hasOut     = hasTallyOut||hasFLOut;
+  return hasTallyIn && !hasFLIn && !hasOut;
 }
 function statusLabel(s){
   if(s==='full')return'<span class="badge badge-full">✅ Đủ IN+OUT</span>';
   if(s==='in-only')return'<span class="badge badge-in-only">⏳ Chờ OUT</span>';
-  if(s==='out-only')return'<span class="badge badge-partial">⚠️ Thiếu IN</span>';
+  if(s==='out-only')return'<span class="badge badge-partial">⚠️ Thiếu Forklift IN</span>';
   return'<span class="badge badge-empty">❓ Trống</span>';
 }
 
@@ -990,16 +1008,20 @@ function renderDetail(){
   const entries=Object.entries(db);
   const counts={all:entries.length,full:0,'in-only':0,'out-only':0,empty:0};
   entries.forEach(([,r])=>{const s=getStatus(r);counts[s]=(counts[s]||0)+1;});
+  const missingFL=entries.filter(([,r])=>isMissingFLIn(r)).length;
   document.getElementById('chips').innerHTML=`
     <div class="chip chip-all ${detailFilter==='all'?'active':''}" onclick="setFilter('all')">Tất cả (${counts.all})</div>
     <div class="chip chip-full ${detailFilter==='full'?'active':''}" onclick="setFilter('full')">✅ Đủ IN+OUT (${counts.full})</div>
     <div class="chip chip-in-only ${detailFilter==='in-only'?'active':''}" onclick="setFilter('in-only')">⏳ Chờ OUT (${counts['in-only']})</div>
-    <div class="chip chip-partial ${detailFilter==='out-only'?'active':''}" onclick="setFilter('out-only')">⚠️ Thiếu IN (${counts['out-only']})</div>
+    <div class="chip chip-partial ${detailFilter==='out-only'?'active':''}" onclick="setFilter('out-only')">⚠️ Thiếu Forklift IN (${missingFL})</div>
     <div class="chip chip-empty ${detailFilter==='empty'?'active':''}" onclick="setFilter('empty')">❓ Trống (${counts.empty})</div>`;
   const search=detailSearch.toLowerCase();
   const yearF=document.getElementById('det-year').value;
   filteredRows=entries.filter(([pm,rec])=>{
-    if(detailFilter!=='all'&&getStatus(rec)!==detailFilter)return false;
+    if(detailFilter!=='all'){
+      if(detailFilter==='out-only'){if(!isMissingFLIn(rec))return false;}
+      else if(getStatus(rec)!==detailFilter)return false;
+    }
     if(search){const hay=[pm,rec.it||rec.inTally,rec.ot||rec.outTally,rec.iu||rec.inUser,rec.ou||rec.outUser,rec.sp].filter(Boolean).join(' ').toLowerCase();if(!hay.includes(search))return false;}
     if(yearF!=='all'){const y=parseInt(yearF);const dates=[rec.ii||rec.inTallyTime,rec.oi||rec.outTallyTime,rec.id||rec.inDate,rec.od||rec.outDate].map(parseDate).filter(Boolean);if(!dates.some(d=>d.getFullYear()===y))return false;}
     return true;
@@ -1038,6 +1060,7 @@ function renderDetailPage(){
       <td>${rec.iu||rec.inUser||'<span class="ce">—</span>'}</td><td>${fmtDt(rec.id||rec.inDate)}</td>
       <td>${rec.ou||rec.outUser||'<span class="ce">—</span>'}</td><td>${fmtDt(rec.od||rec.outDate)}</td>
       <td>${rec.sp||'<span class="ce">—</span>'}</td>
+      ${isAdmin?`<td><button class="btn btn-sm" style="font-size:11px;padding:2px 7px;color:var(--coral)" onclick="deletePallet('${pm}')">🗑 Xóa</button></td>`:'<td></td>'}
     </tr>`;
   });
   document.getElementById('dtbody').innerHTML=h;
@@ -1088,6 +1111,15 @@ function exportDetailExcel(){
   });
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Chi tiết pallet');
   XLSX.writeFile(wb,'ChiTiet_Pallet_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+
+function deletePallet(pm) {
+  if (!isAdmin) return;
+  if (!confirm(`Xóa pallet "${pm}" khỏi database?\nHành động này không thể hoàn tác!`)) return;
+  delete db[pm];
+  showStatus('ok', `✅ Đã xóa pallet ${pm} — Bấm 💾 Lưu & Upload để cập nhật`);
+  afterDataChange();
+  renderDetail();
 }
 
 function showStatus(type,msg){const s=document.getElementById('sbar');s.className='sbar '+type;s.innerHTML=`<div class="sdot"></div>${msg}`;s.classList.remove('hidden');}
