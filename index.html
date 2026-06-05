@@ -754,6 +754,12 @@ function processExcel(raw, fname) {
       added++;
     } else {
       let ch = false;
+      // Update missing IN fields
+      if (!ex.ii && !ex.inTallyTime && inTallyTime) { ex.ii=trimDt(inTallyTime); ch=true; }
+      if (!ex.it && !ex.inTally && inTally) { ex.it=inTally; ch=true; }
+      if (!ex.id && !ex.inDate && inDate) { ex.id=trimDt(inDate); ch=true; }
+      if (!ex.iu && !ex.inUser && inUser) { ex.iu=inUser; ch=true; }
+      // Update missing OUT fields
       if (!ex.oi && !ex.outTallyTime && outTallyTime) { ex.oi=trimDt(outTallyTime); ch=true; }
       if (!ex.ot && !ex.outTally && outTally) { ex.ot=outTally; ch=true; }
       if (!ex.od && !ex.outDate && outDate) { ex.od=trimDt(outDate); ch=true; }
@@ -795,6 +801,9 @@ function buildEvents(yearFilter,monthFilter){
 }
 function yearOk(d,year,month){if(d.getFullYear()!==year)return false;if(month!=='all'&&d.getMonth()+1!==month)return false;return true;}
 function getStatus(rec){
+  // CBM = 0 → pallet không tồn tại thực → trống
+  const cbm=rec.c||rec.cbm||0;
+  if(cbm===0)return'empty';
   const hti=(rec.it||rec.inTally)&&(rec.ii||rec.inTallyTime),hto=(rec.ot||rec.outTally)&&(rec.oi||rec.outTallyTime);
   const hfi=(rec.iu||rec.inUser)&&(rec.id||rec.inDate),hfo=(rec.ou||rec.outUser)&&(rec.od||rec.outDate);
   const anyIn=hti||hfi,anyOut=hto||hfo;
