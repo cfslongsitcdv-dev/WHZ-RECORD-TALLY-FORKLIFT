@@ -208,6 +208,7 @@ th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
       <span class="dbtag" id="db-updated"></span>
     </div>
     <!-- Upload buttons (admin only) -->
+    <button class="btn btn-sm admin-only hidden" onclick="openAPIModal()" style="background:#faeeda;color:#633806;border-color:#e8a020">⚡ Lấy từ API</button>
     <label class="btn btn-sm admin-only hidden" for="fi-excel" title="Tải file Excel CFS" style="cursor:pointer;background:var(--teal-l);color:var(--teal);border-color:var(--teal-m)">📊 Excel</label>
     <input type="file" id="fi-excel" accept=".xls,.xlsx" class="hidden">
     <button class="btn btn-sm admin-only hidden" onclick="saveAndUpload()" id="btn-save">💾 Lưu & Upload</button>
@@ -1122,7 +1123,130 @@ function deletePallet(pm) {
   renderDetail();
 }
 
+// ── API FETCH ─────────────────────────────────────────────────────────────────
+const EDGE_FETCH = 'https://tblwhztipyzafmzspbcz.supabase.co/functions/v1/fetch-pallet-api';
+
+function openAPIModal() {
+  // Set default dates: today
+  const today = new Date().toISOString().slice(0,10);
+  document.getElementById('api-fromdate').value = today;
+  document.getElementById('api-todate').value = today;
+  document.getElementById('api-status').style.display = 'none';
+  openModal('modal-api');
+}
+
+async function fetchFromAPI() {
+  const fromRaw = document.getElementById('api-fromdate').value;
+  const toRaw = document.getElementById('api-todate').value;
+  if (!fromRaw || !toRaw) { alert('Vui lòng chọn ngày'); return; }
+
+  // Convert YYYY-MM-DD to DD-MM-YYYY for API
+  const fmtDate = d => d.split('-').reverse().join('-');
+  const fromdate = fmtDate(fromRaw);
+  const todate = fmtDate(toRaw);
+
+  const btn = document.getElementById('btn-api-fetch');
+  const st = document.getElementById('api-status');
+  btn.textContent = '⏳ Đang lấy...'; btn.disabled = true;
+  st.style.display = 'block';
+  st.style.background = 'var(--amber-l)'; st.style.color = 'var(--amber)';
+  st.textContent = `Đang lấy dữ liệu từ ${fromdate} đến ${todate}...`;
+
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) throw new Error('Chưa đăng nhập');
+
+    const res = await fetch(EDGE_FETCH, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + session.access_token
+      },
+      body: JSON.stringify({ fromdate, todate })
+    });
+
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+
+    st.textContent = `Đã nhận ${json.total.toLocaleString()} records, đang xử lý...`;
+
+    // Process same as Excel
+    const trimDt = d => d ? new Date(d).toISOString().slice(0,16) : null;
+    let added=0, updated=0, skipped=0;
+
+    json.data.forEach(r => {
+      if ((r['CargoInType']||'').toString().trim().toUpperCase() !== 'OUT') return;
+      const pm = (r['PalletMasterCode']||'').toString().trim();
+      if (!pm) { skipped++; return; }
+      const cbm = parseFloat(r['CBM']) || 0;
+      const inTallyTime = r['TallyInTime'] ? new Date(r['TallyInTime']) : null;
+      const outTallyTime = r['TallyOutTime'] ? new Date(r['TallyOutTime']) : null;
+      const inTally = r['InTally'] || null;
+      const outTally = r['OutTally'] || null;
+      const inDate = r['InDate'] ? new Date(r['InDate']) : null;
+      const outDate = r['OutDate'] ? new Date(r['OutDate']) : null;
+      const inUser = r['InUser'] || null;
+      const outUser = r['OutUer'] || null;
+      const supplier = r['SupplierName'] || null;
+
+      const ex = db[pm];
+      if (!ex) {
+        db[pm] = { it:inTally, ii:trimDt(inTallyTime), ot:outTally, oi:trimDt(outTallyTime), iu:inUser, id:trimDt(inDate), ou:outUser, od:trimDt(outDate), c:cbm, sp:supplier };
+        added++;
+      } else {
+        let ch=false;
+        if(!ex.ii&&!ex.inTallyTime&&inTallyTime){ex.ii=trimDt(inTallyTime);ch=true;}
+        if(!ex.it&&!ex.inTally&&inTally){ex.it=inTally;ch=true;}
+        if(!ex.id&&!ex.inDate&&inDate){ex.id=trimDt(inDate);ch=true;}
+        if(!ex.iu&&!ex.inUser&&inUser){ex.iu=inUser;ch=true;}
+        if(!ex.oi&&!ex.outTallyTime&&outTallyTime){ex.oi=trimDt(outTallyTime);ch=true;}
+        if(!ex.ot&&!ex.outTally&&outTally){ex.ot=outTally;ch=true;}
+        if(!ex.od&&!ex.outDate&&outDate){ex.od=trimDt(outDate);ch=true;}
+        if(!ex.ou&&!ex.outUser&&outUser){ex.ou=outUser;ch=true;}
+        if(cbm&&cbm!==(ex.c||ex.cbm)){ex.c=cbm;ch=true;}
+        if(!ex.sp&&supplier){ex.sp=supplier;ch=true;}
+        if(ch)updated++;else skipped++;
+      }
+    });
+
+    btn.textContent='⚡ Lấy dữ liệu'; btn.disabled=false;
+    st.style.background='var(--teal-l)'; st.style.color='var(--teal)';
+    st.textContent=`✅ ${json.total.toLocaleString()} records · +${added} mới · ↑${updated} cập nhật · ${skipped} không đổi`;
+    showStatus('ok', `✅ API: +${added} mới, ↑${updated} cập nhật — Bấm 💾 Lưu & Upload`);
+    afterDataChange();
+
+  } catch(err) {
+    btn.textContent='⚡ Lấy dữ liệu'; btn.disabled=false;
+    st.style.background='var(--coral-l)'; st.style.color='var(--coral)';
+    st.textContent='❌ ' + err.message;
+  }
+}
+
 function showStatus(type,msg){const s=document.getElementById('sbar');s.className='sbar '+type;s.innerHTML=`<div class="sdot"></div>${msg}`;s.classList.remove('hidden');}
 </script>
+
+<!-- API FETCH MODAL -->
+<div class="modal-overlay" id="modal-api">
+  <div class="modal-box" style="width:400px">
+    <div class="modal-title">⚡ Lấy dữ liệu từ API CFS</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:14px">Tự động lấy dữ liệu pallet từ hệ thống CFS theo ngày</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      <div class="modal-field" style="margin:0">
+        <label>Từ ngày</label>
+        <input type="date" id="api-fromdate">
+      </div>
+      <div class="modal-field" style="margin:0">
+        <label>Đến ngày</label>
+        <input type="date" id="api-todate">
+      </div>
+    </div>
+    <div id="api-status" style="font-size:12px;padding:8px;border-radius:var(--r);display:none;margin-bottom:10px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-sm" onclick="closeModal('modal-api')">Đóng</button>
+      <button class="btn btn-sm" style="background:#faeeda;color:#633806;border-color:#e8a020" onclick="fetchFromAPI()" id="btn-api-fetch">⚡ Lấy dữ liệu</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
