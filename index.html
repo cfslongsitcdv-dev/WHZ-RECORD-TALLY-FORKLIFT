@@ -208,8 +208,7 @@ th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
       <span class="dbtag" id="db-updated"></span>
     </div>
     <!-- Upload buttons (admin only) -->
-    <button class="btn btn-sm admin-only hidden" onclick="openAPIModal()" style="background:#faeeda;color:#633806;border-color:#e8a020">⚡ Lấy từ API</button>
-    <label class="btn btn-sm admin-only hidden" for="fi-excel" title="Tải file Excel CFS" style="cursor:pointer;background:var(--teal-l);color:var(--teal);border-color:var(--teal-m)">📊 Excel</label>
+<label class="btn btn-sm admin-only hidden" for="fi-excel" title="Tải file Excel CFS" style="cursor:pointer;background:var(--teal-l);color:var(--teal);border-color:var(--teal-m)">📊 Excel</label>
     <input type="file" id="fi-excel" accept=".xls,.xlsx" class="hidden">
     <button class="btn btn-sm admin-only hidden" onclick="saveAndUpload()" id="btn-save">💾 Lưu & Upload</button>
     <button class="btn btn-sm" onclick="loadFromSupabase()" id="btn-load" style="display:none;background:var(--purple-l);color:var(--purple);border-color:var(--purple-m)">☁️ Tải dữ liệu</button>
@@ -744,6 +743,9 @@ function processExcel(raw, fname) {
   outRows.forEach(r => {
     const pm = (r['Pallet Master Code']||'').toString().trim();
     if (!pm) { skipped++; return; }
+    // Bỏ qua pallet có Num = 0 hoặc null
+    const num = parseFloat(r['Num'] || 0);
+    if (!num || num === 0) { skipped++; return; }
     const cbm = parseFloat(r['CBM']) || 0;
     const inTallyTime = parseDate(r['Tally In Time']);
     const outTallyTime = parseDate(r['Tally Out Time']);
@@ -1124,7 +1126,7 @@ function deletePallet(pm) {
 }
 
 // ── API FETCH ─────────────────────────────────────────────────────────────────
-const EDGE_FETCH = 'https://tblwhztipyzafmzspbcz.supabase.co/functions/v1/fetch-pallet-api';
+const PROXY_URL = 'https://intersection-oregon-africa-ashley.trycloudflare.com';
 
 function openAPIModal() {
   // Set default dates: today
@@ -1153,16 +1155,8 @@ async function fetchFromAPI() {
   st.textContent = `Đang lấy dữ liệu từ ${fromdate} đến ${todate}...`;
 
   try {
-    const { data: { session } } = await sb.auth.getSession();
-    if (!session) throw new Error('Chưa đăng nhập');
-
-    const res = await fetch(EDGE_FETCH, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + session.access_token
-      },
-      body: JSON.stringify({ fromdate, todate })
+    const res = await fetch(`${PROXY_URL}?fromdate=${fromdate}&todate=${todate}`, {
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' }
     });
 
     const json = await res.json();
@@ -1225,28 +1219,6 @@ async function fetchFromAPI() {
 function showStatus(type,msg){const s=document.getElementById('sbar');s.className='sbar '+type;s.innerHTML=`<div class="sdot"></div>${msg}`;s.classList.remove('hidden');}
 </script>
 
-<!-- API FETCH MODAL -->
-<div class="modal-overlay" id="modal-api">
-  <div class="modal-box" style="width:400px">
-    <div class="modal-title">⚡ Lấy dữ liệu từ API CFS</div>
-    <div style="font-size:12px;color:var(--text2);margin-bottom:14px">Tự động lấy dữ liệu pallet từ hệ thống CFS theo ngày</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-      <div class="modal-field" style="margin:0">
-        <label>Từ ngày</label>
-        <input type="date" id="api-fromdate">
-      </div>
-      <div class="modal-field" style="margin:0">
-        <label>Đến ngày</label>
-        <input type="date" id="api-todate">
-      </div>
-    </div>
-    <div id="api-status" style="font-size:12px;padding:8px;border-radius:var(--r);display:none;margin-bottom:10px"></div>
-    <div class="modal-actions">
-      <button class="btn btn-sm" onclick="closeModal('modal-api')">Đóng</button>
-      <button class="btn btn-sm" style="background:#faeeda;color:#633806;border-color:#e8a020" onclick="fetchFromAPI()" id="btn-api-fetch">⚡ Lấy dữ liệu</button>
-    </div>
-  </div>
-</div>
 
 </body>
 </html>
