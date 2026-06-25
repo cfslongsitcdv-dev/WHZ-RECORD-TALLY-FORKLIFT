@@ -373,6 +373,7 @@ th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
           <select id="top-n" onchange="renderTop()">
             <option value="5">Top 5</option><option value="10">Top 10</option><option value="99">Tất cả</option>
           </select>
+          <div class="cright"><button class="btn btn-teal btn-sm" onclick="exportTopExcel()">⬇ Xuất Excel</button></div>
         </div>
         <div class="top-grid" id="top-grid"></div>
       </div>
@@ -1177,6 +1178,118 @@ function exportExcel(){
     });
   });
   XLSX.writeFile(wb,`SanLuong_CFS_${year}.xlsx`);
+}
+
+// ── TOP EXPORT ─────────────────────────────────────────────────────────────
+function exportTopExcel(){
+  const year=parseInt(document.getElementById('top-year').value);
+  const period=document.getElementById('top-period').value;
+  const n=parseInt(document.getElementById('top-n').value);
+  const isOps=currentTopMode==='ops';
+  const reportType=isOps?'Tac_Nghiep':'San_Luong';
+  const reportTitle=isOps?'BÁO CÁO TÁC NGHIỆP':'BÁO CÁO SẢN LƯỢNG';
+  const unit=isOps?'Pallet':'CBM';
+
+  // Period label
+  let periodLabel='';
+  if(period==='year')periodLabel=`Năm ${year}`;
+  else if(period==='month'){const mv=document.getElementById('top-month').value;periodLabel=mv==='all'?`Năm ${year}`:`Tháng ${mv}/${year}`;}
+  else if(period==='week'){const sw=document.getElementById('top-week').value;periodLabel=sw?sw.replace('-W','·W'):`Năm ${year}`;}
+  else if(period==='day'){const sd=document.getElementById('top-day').value;periodLabel=sd?sd.split('-').reverse().join('/'):`Năm ${year}`;}
+
+  const wb=XLSX.utils.book_new();
+  ['Tally','Forklift'].forEach(role=>{
+    const sheetName=role==='Tally'?'Tally':'Xe Nâng';
+    // Get top data for this role
+    const savedRole=currentTopRole;
+    currentTopRole=role;
+
+    function getTopData(type){
+      if(isOps){
+        const agg={};
+        Object.entries(db).forEach(([pm,rec])=>{
+          const cbmVal=rec.c||rec.cbm||0;if(!cbmVal)return;
+          const inTally=rec.it||rec.inTally,inTallyTime=rec.ii||rec.inTallyTime;
+          const outTally=rec.ot||rec.outTally,outTallyTime=rec.oi||rec.outTallyTime;
+          const inUser=rec.iu||rec.inUser,inDate=rec.id||rec.inDate;
+          const outUser=rec.ou||rec.outUser,outDate=rec.od||rec.outDate;
+          let person=null,date=null;
+          if(type==='IN'){if(role==='Tally'&&inTally&&inTallyTime){person=inTally;date=parseDate(inTallyTime);}else if(role==='Forklift'&&inUser&&inDate){person=inUser;date=parseDate(inDate);}}
+          else{if(role==='Tally'&&outTally&&outTallyTime){person=outTally;date=parseDate(outTallyTime);}else if(role==='Forklift'&&outUser&&outDate){person=outUser;date=parseDate(outDate);}}
+          if(!person||!date)return;
+          let ok=false;
+          if(period==='year'&&date.getFullYear()===year)ok=true;
+          else if(period==='month'){const mv=document.getElementById('top-month').value;const m=mv==='all'?null:parseInt(mv);ok=date.getFullYear()===year&&(!m||date.getMonth()+1===m);}
+          else if(period==='week'){const sw=document.getElementById('top-week').value;ok=wKey(date)===sw;}
+          else if(period==='day'){const sd=document.getElementById('top-day').value;ok=dKey(date)===sd;}
+          if(ok)agg[person]=(agg[person]||0)+1;
+        });
+        return Object.entries(agg).sort((a,b)=>b[1]-a[1]);
+      } else {
+        const ev=evFiltered.filter(e=>e.role===role&&e.type===type);
+        const agg={};ev.forEach(e=>{agg[e.person]=(agg[e.person]||0)+e.cbm;});
+        return Object.entries(agg).sort((a,b)=>b[1]-a[1]);
+      }
+    }
+
+    const inData=getTopData('IN');
+    const outData=getTopData('OUT');
+    const totalAgg={};
+    [...inData,...outData].forEach(([name,val])=>{totalAgg[name]=(totalAgg[name]||0)+val;});
+    const totalData=Object.entries(totalAgg).sort((a,b)=>b[1]-a[1]);
+
+    const maxRows=Math.max(inData.length,outData.length,totalData.length,n==='99'?999:parseInt(n));
+    const topN=n==='99'?99999:parseInt(n);
+
+    // Build sheet data
+    const rows=[];
+    // Header rows
+    rows.push(['BP KHO CFS SITC ĐÌNH VŨ','','','','','','','','','','','']);
+    rows.push([`${reportTitle} - ${role.toUpperCase()}`,`(${periodLabel})`,'','','','','','','','','','']);
+    rows.push([]);
+    rows.push([
+      `IN - ${unit}`,'',' ',
+      `OUT - ${unit}`,'',' ',
+      `TỔNG IN+OUT - ${unit}`,'',''
+    ]);
+    rows.push([
+      'Thứ hạng','Nhân viên',`${unit}`,' ',
+      'Thứ hạng','Nhân viên',`${unit}`,' ',
+      'Thứ hạng','Nhân viên',`${unit}`
+    ]);
+
+    const maxLen=Math.min(Math.max(inData.length,outData.length,totalData.length),topN);
+    for(let i=0;i<maxLen;i++){
+      const inn=inData[i]||['',''];
+      const out=outData[i]||['',''];
+      const tot=totalData[i]||['',''];
+      const fmt=v=>isOps?(v||''):(v?parseFloat(v).toFixed(2):'');
+      rows.push([
+        inn[0]?(i+1):'', inn[0]||'', fmt(inn[1]),' ',
+        out[0]?(i+1):'', out[0]||'', fmt(out[1]),' ',
+        tot[0]?(i+1):'', tot[0]||'', fmt(tot[1])
+      ]);
+    }
+
+    currentTopRole=savedRole;
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+
+    // Column widths
+    ws['!cols']=[{wch:10},{wch:22},{wch:12},{wch:2},{wch:10},{wch:22},{wch:12},{wch:2},{wch:10},{wch:22},{wch:12}];
+
+    // Merges
+    ws['!merges']=[
+      {s:{r:0,c:0},e:{r:0,c:11}},  // Company name
+      {s:{r:1,c:0},e:{r:1,c:11}},  // Report title
+      {s:{r:3,c:0},e:{r:3,c:2}},   // IN header
+      {s:{r:3,c:4},e:{r:3,c:6}},   // OUT header
+      {s:{r:3,c:8},e:{r:3,c:10}},  // TOTAL header
+    ];
+
+    XLSX.utils.book_append_sheet(wb,ws,sheetName);
+  });
+
+  XLSX.writeFile(wb,`Top_${reportType}_${year}_${periodLabel.replace(/\//g,'-')}.xlsx`);
 }
 function buildExportData(period,role,year){
   const events=buildEvents(year,'all').filter(e=>e.role===role);
