@@ -288,10 +288,15 @@ th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
 
 <!-- LOAD MODAL -->
 <div class="drive-modal" id="load-modal">
-  <div style="background:var(--surface);border-radius:var(--rl);padding:24px;width:400px;max-width:90vw">
+  <div style="background:var(--surface);border-radius:var(--rl);padding:24px;width:440px;max-width:90vw">
     <div style="font-size:15px;font-weight:600;margin-bottom:6px">☁️ Tải dữ liệu</div>
-    <div style="font-size:12px;color:var(--text2);margin-bottom:16px">Tải dữ liệu mới nhất từ Supabase</div>
-    <button class="btn btn-teal btn-sm" onclick="fetchData()" id="btn-fetch" style="width:100%;margin-bottom:10px">⬇ Tải từ Supabase</button>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:14px">Chọn năm muốn tải — mỗi file ~3-5MB, tải nhanh hơn nhiều!</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px" id="year-checkboxes">
+      <!-- Generated dynamically -->
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button class="btn btn-teal btn-sm" onclick="fetchDataByYear()" id="btn-fetch" style="flex:1">⬇ Tải dữ liệu đã chọn</button>
+    </div>
     <div id="load-status" style="font-size:12px;display:none;padding:8px;border-radius:var(--r)"></div>
     <div style="display:flex;justify-content:flex-end;margin-top:12px">
       <button class="btn btn-sm" onclick="closeLoadModal()">Đóng</button>
@@ -651,31 +656,130 @@ function closeModal(id) {
 
 // ── SUPABASE DATA ─────────────────────────────────────────────────────────────
 function loadFromSupabase() {
+  // Generate year checkboxes (current year + 2 previous)
+  const currentYear = new Date().getFullYear();
+  const years = [];
+  for(let y = currentYear; y >= currentYear - 3; y--) years.push(y);
+  const container = document.getElementById('year-checkboxes');
+  container.innerHTML = years.map(y => `
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 12px;border:1px solid var(--border2);border-radius:var(--r);font-size:13px;background:var(--surface);user-select:none" id="lbl-year-${y}">
+      <input type="checkbox" id="chk-year-${y}" value="${y}" onchange="updateYearLabel(${y})" ${y===currentYear?'checked':''}>
+      <span>${y}</span>
+    </label>
+  `).join('');
+  updateAllYearLabels();
   document.getElementById('load-modal').classList.add('open');
 }
+
+function updateYearLabel(year) { updateAllYearLabels(); }
+function updateAllYearLabels() {
+  const currentYear = new Date().getFullYear();
+  for(let y = currentYear; y >= currentYear - 3; y--) {
+    const chk = document.getElementById(`chk-year-${y}`);
+    const lbl = document.getElementById(`lbl-year-${y}`);
+    if(chk && lbl) {
+      lbl.style.background = chk.checked ? 'var(--purple-l)' : 'var(--surface)';
+      lbl.style.borderColor = chk.checked ? 'var(--purple-m)' : 'var(--border2)';
+      lbl.style.color = chk.checked ? 'var(--purple)' : 'var(--text)';
+    }
+  }
+}
+
 function closeLoadModal() {
   document.getElementById('load-modal').classList.remove('open');
 }
-async function fetchData() {
+
+async function fetchDataByYear() {
+  const currentYear = new Date().getFullYear();
+  const selectedYears = [];
+  for(let y = currentYear; y >= currentYear - 3; y--) {
+    const chk = document.getElementById(`chk-year-${y}`);
+    if(chk && chk.checked) selectedYears.push(y);
+  }
+  if(!selectedYears.length) { alert('Vui lòng chọn ít nhất 1 năm'); return; }
+
   const btn = document.getElementById('btn-fetch');
   const st = document.getElementById('load-status');
   btn.textContent = '⏳ Đang tải...'; btn.disabled = true;
-  st.style.display = 'block'; st.style.background = 'var(--amber-l)'; st.style.color = 'var(--amber)';
-  st.textContent = 'Đang kết nối Supabase...';
-  try {
-    const { data, error } = await sb.storage.from('cfs-data').download('data.json.gz');
-    if (error) throw new Error(error.message);
-    st.textContent = 'Đang xử lý dữ liệu...';
-    const buf = await data.arrayBuffer();
-    const bytes = new Uint8Array(buf);
-    await parseAndLoadBytes(bytes, st);
-    btn.textContent = '⬇ Tải từ Supabase'; btn.disabled = false;
-  } catch(err) {
-    btn.textContent = '⬇ Tải từ Supabase'; btn.disabled = false;
-    st.style.background = 'var(--coral-l)'; st.style.color = 'var(--coral)';
-    st.textContent = '❌ ' + err.message + (err.message.includes('not found') ? ' — Chưa có file data, hãy upload Excel trước' : '');
+  st.style.display = 'block';
+
+  // Load each year file and merge
+  const mergedDb = {};
+  for(const year of selectedYears.sort()) {
+    st.style.background = 'var(--amber-l)'; st.style.color = 'var(--amber)';
+    st.textContent = `Đang tải dữ liệu năm ${year}...`;
+    try {
+      const filename = `data_${year}.json.gz`;
+      const { data, error } = await sb.storage.from('cfs-data').download(filename);
+      if(error) throw new Error(error.message);
+      const buf = await data.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      // Parse year file
+      const yearDb = await parseGzipToDb(bytes);
+      // Merge with dedup by PalletMasterCode
+      let added = 0, merged = 0;
+      Object.entries(yearDb).forEach(([pm, rec]) => {
+        if(!mergedDb[pm]) { mergedDb[pm] = rec; added++; }
+        else {
+          // Merge: fill missing fields
+          const ex = mergedDb[pm];
+          let ch = false;
+          ['ii','it','id','iu','oi','ot','od','ou','c','sp','nm'].forEach(k => {
+            if(!ex[k] && rec[k]) { ex[k] = rec[k]; ch = true; }
+          });
+          if(ch) merged++;
+        }
+      });
+      st.textContent = `✅ Năm ${year}: ${Object.keys(yearDb).length.toLocaleString()} pallets (+${added} mới, ${merged} merge)`;
+    } catch(err) {
+      st.style.background = 'var(--coral-l)'; st.style.color = 'var(--coral)';
+      st.textContent = `❌ Năm ${year}: ${err.message}`;
+      btn.textContent = '⬇ Tải dữ liệu đã chọn'; btn.disabled = false;
+      return;
+    }
   }
+
+  db = mergedDb;
+  btn.textContent = '⬇ Tải dữ liệu đã chọn'; btn.disabled = false;
+  st.style.background = 'var(--teal-l)'; st.style.color = 'var(--teal)';
+  st.textContent = `✅ Đã tải ${selectedYears.join(', ')} — Tổng ${Object.keys(db).length.toLocaleString()} pallets`;
+  setTimeout(() => closeLoadModal(), 1500);
+  showStatus('ok', `Đã tải năm ${selectedYears.join(', ')}: ${Object.keys(db).length.toLocaleString()} pallets`);
+  afterDataChange();
 }
+
+async function parseGzipToDb(bytes) {
+  return new Promise((resolve, reject) => {
+    const workerCode = `
+      self.onmessage = async function(e) {
+        try {
+          let bytes = new Uint8Array(e.data);
+          if(bytes[0]===0x1f && bytes[1]===0x8b) {
+            const ds = new DecompressionStream('gzip');
+            const writer = ds.writable.getWriter();
+            const reader = ds.readable.getReader();
+            writer.write(bytes); writer.close();
+            let chunks = [];
+            while(true){const{done,value}=await reader.read();if(done)break;chunks.push(value);}
+            const all = new Uint8Array(chunks.reduce((a,b)=>{const c=new Uint8Array(a.length+b.length);c.set(a);c.set(b,a.length);return c;},new Uint8Array(0)));
+            bytes = all;
+          }
+          const text = new TextDecoder().decode(bytes);
+          const parsed = JSON.parse(text);
+          self.postMessage({ ok: true, data: parsed.db || parsed });
+        } catch(err) { self.postMessage({ ok: false, error: err.message }); }
+      };
+    `;
+    const blob = new Blob([workerCode], { type: 'application/javascript' });
+    const worker = new Worker(URL.createObjectURL(blob));
+    worker.onmessage = e => { worker.terminate(); if(!e.data.ok) reject(new Error(e.data.error)); else resolve(e.data.data); };
+    worker.onerror = e => { worker.terminate(); reject(new Error(e.message)); };
+    worker.postMessage(bytes.buffer, [bytes.buffer]);
+  });
+}
+
+// Keep old fetchData for compatibility
+async function fetchData() { await fetchDataByYear(); }
 
 async function saveAndUpload() {
   if (!isAdmin) return;
