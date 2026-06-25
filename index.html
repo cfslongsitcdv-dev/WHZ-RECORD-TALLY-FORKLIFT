@@ -306,6 +306,7 @@ th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
     <div class="card">
       <div class="nav-tabs">
         <button class="ntab active" onclick="switchMain('report')">📊 Báo cáo sản lượng</button>
+        <button class="ntab" onclick="switchMain('ops')">📋 Báo cáo tác nghiệp</button>
         <button class="ntab" onclick="switchMain('top')">🏆 Top sản lượng</button>
         <button class="ntab" onclick="switchMain('detail')">🔍 Chi tiết pallet <span id="pending-badge" style="background:var(--coral);color:#fff;border-radius:99px;padding:1px 7px;font-size:11px;margin-left:4px"></span></button>
       </div>
@@ -329,9 +330,32 @@ th.ths{background:var(--purple-l);color:var(--purple);font-weight:600}
         <div class="tscroll" id="tbl"></div>
       </div>
 
+      <!-- OPS REPORT -->
+      <div class="tab-panel" id="panel-ops">
+        <div class="nav-tabs" style="border-radius:0">
+          <button class="ntab active" onclick="switchOpsPeriod('day')">Theo ngày</button>
+          <button class="ntab" onclick="switchOpsPeriod('week')">Theo tuần</button>
+          <button class="ntab" onclick="switchOpsPeriod('month')">Theo tháng</button>
+        </div>
+        <div class="sub-tabs">
+          <button class="stab active" onclick="switchOpsRole('Tally')">Tally</button>
+          <button class="stab" onclick="switchOpsRole('Forklift')">Forklift</button>
+        </div>
+        <div class="controls">
+          <select id="ops-year" onchange="renderOpsAll()"></select>
+          <select id="ops-month" onchange="renderOpsAll()"><option value="all">Tất cả tháng</option></select>
+          <div class="cright"><button class="btn btn-teal btn-sm" onclick="exportOpsExcel()">⬇ Xuất Excel</button></div>
+        </div>
+        <div class="tscroll" id="ops-tbl"></div>
+      </div>
+
       <!-- TOP -->
       <div class="tab-panel" id="panel-top">
         <div class="sub-tabs">
+          <button class="stab active" onclick="switchTopMode('cbm')">💰 Sản lượng (CBM)</button>
+          <button class="stab" onclick="switchTopMode('ops')">📋 Tác nghiệp (Pallet)</button>
+        </div>
+        <div class="sub-tabs" id="top-role-tabs">
           <button class="stab active" onclick="switchTopRole('Tally')">Tally</button>
           <button class="stab" onclick="switchTopRole('Forklift')">Forklift</button>
         </div>
@@ -758,7 +782,8 @@ function processExcel(raw, fname) {
     const ex = db[pm];
     if (!ex) {
       const supplier = (r['Supplier Name']||'').toString().trim() || null;
-      db[pm] = { it:inTally, ii:trimDt(inTallyTime), ot:outTally, oi:trimDt(outTallyTime), iu:inUser, id:trimDt(inDate), ou:outUser, od:trimDt(outDate), c:cbm, sp:supplier };
+      const numVal = parseFloat(r['Num'] || 0);
+      db[pm] = { it:inTally, ii:trimDt(inTallyTime), ot:outTally, oi:trimDt(outTallyTime), iu:inUser, id:trimDt(inDate), ou:outUser, od:trimDt(outDate), c:cbm, sp:supplier, nm:numVal };
       added++;
     } else {
       let ch = false;
@@ -869,11 +894,23 @@ function buildSelectors(){
 // ── REPORT ────────────────────────────────────────────────────────────────────
 function switchMain(tab){
   currentMain=tab;
-  document.querySelectorAll('.nav-tabs:first-of-type .ntab').forEach((b,i)=>b.classList.toggle('active',['report','top','detail'][i]===tab));
+  document.querySelectorAll('.nav-tabs:first-of-type .ntab').forEach((b,i)=>b.classList.toggle('active',['report','ops','top','detail'][i]===tab));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
   document.getElementById('panel-'+tab).classList.add('active');
   if(tab==='detail')renderDetail();
   if(tab==='top')renderTop();
+  if(tab==='ops'){
+    // Populate ops year selector
+    const years=new Set();
+    Object.values(db).forEach(rec=>{[rec.ii||rec.inTallyTime,rec.oi||rec.outTallyTime,rec.id||rec.inDate,rec.od||rec.outDate].forEach(d=>{const pd=parseDate(d);if(pd)years.add(pd.getFullYear());});});
+    const sy=[...years].sort();
+    const el=document.getElementById('ops-year');
+    const cur=el.value;
+    el.innerHTML=sy.map(y=>`<option value="${y}">${y}</option>`).join('');
+    if(sy.includes(parseInt(cur)))el.value=cur;
+    else if(sy.length)el.value=sy[sy.length-1];
+    renderOpsAll();
+  }
 }
 function switchPeriod(p){
   currentPeriod=p;
@@ -960,7 +997,17 @@ function renderTable(year,month){
 }
 
 // ── TOP ───────────────────────────────────────────────────────────────────────
-function switchTopRole(r){currentTopRole=r;document.querySelectorAll('#panel-top .stab').forEach((b,i)=>b.classList.toggle('active',['Tally','Forklift'][i]===r));renderTop();}
+let currentTopMode = 'cbm';
+function switchTopMode(m){
+  currentTopMode=m;
+  document.querySelectorAll('#panel-top .sub-tabs:first-of-type .stab').forEach((b,i)=>b.classList.toggle('active',['cbm','ops'][i]===m));
+  renderTop();
+}
+function switchTopRole(r){
+  currentTopRole=r;
+  document.querySelectorAll('#top-role-tabs .stab').forEach((b,i)=>b.classList.toggle('active',['Tally','Forklift'][i]===r));
+  renderTop();
+}
 function onTopYearChange(){const p=document.getElementById('top-period').value;if(p==='month')buildTopMonths();if(p==='week')buildTopWeeks();if(p==='day')buildTopDays();renderTop();}
 function onTopPeriodChange(){
   const p=document.getElementById('top-period').value;
@@ -994,13 +1041,55 @@ function renderTop(){
   else{const sd=document.getElementById('top-day').value;if(!sd){buildTopDays();return;}evFiltered=buildEvents(year,'all').filter(e=>dKey(e.date)===sd);}
   function topList(type){const agg={};evFiltered.filter(e=>e.role===role&&e.type===type).forEach(e=>{agg[e.person]=(agg[e.person]||0)+e.cbm;});return Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,n);}
   function topListTotal(){const agg={};evFiltered.filter(e=>e.role===role).forEach(e=>{agg[e.person]=(agg[e.person]||0)+e.cbm;});return Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,n);}
-  const cats=[{title:'🟢 IN — Top CBM',data:topList('IN'),color:'var(--teal-m)'},{title:'🔴 OUT — Top CBM',data:topList('OUT'),color:'var(--coral-m)'},{title:'📊 Total (IN+OUT)',data:topListTotal(),color:'var(--purple-m)'}];
+  // Ops mode - count pallets
+  function topListOps(type){
+    const agg={};
+    Object.entries(db).forEach(([pm,rec])=>{
+      const cbmVal=rec.c||rec.cbm||0; if(!cbmVal)return;
+      const inTally=rec.it||rec.inTally,inTallyTime=rec.ii||rec.inTallyTime;
+      const outTally=rec.ot||rec.outTally,outTallyTime=rec.oi||rec.outTallyTime;
+      const inUser=rec.iu||rec.inUser,inDate=rec.id||rec.inDate;
+      const outUser=rec.ou||rec.outUser,outDate=rec.od||rec.outDate;
+      const role=currentTopRole;
+      let person=null,date=null;
+      if(type==='IN'){
+        if(role==='Tally'&&inTally&&inTallyTime){person=inTally;date=parseDate(inTallyTime);}
+        else if(role==='Forklift'&&inUser&&inDate){person=inUser;date=parseDate(inDate);}
+      } else {
+        if(role==='Tally'&&outTally&&outTallyTime){person=outTally;date=parseDate(outTallyTime);}
+        else if(role==='Forklift'&&outUser&&outDate){person=outUser;date=parseDate(outDate);}
+      }
+      if(!person||!date)return;
+      // Filter by period
+      let ok=false;
+      if(period==='year'&&date.getFullYear()===year)ok=true;
+      else if(period==='month'){const mv=document.getElementById('top-month').value;const m=mv==='all'?null:parseInt(mv);ok=date.getFullYear()===year&&(!m||date.getMonth()+1===m);}
+      else if(period==='week'){const sw=document.getElementById('top-week').value;ok=wKey(date)===sw;}
+      else if(period==='day'){const sd=document.getElementById('top-day').value;ok=dKey(date)===sd;}
+      if(ok)agg[person]=(agg[person]||0)+1;
+    });
+    return Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,n);
+  }
+  function topListOpsTotal(){
+    const agg={};
+    const inData=topListOps('IN');const outData=topListOps('OUT');
+    [...inData,...outData].forEach(([name,val])=>{agg[name]=(agg[name]||0)+val;});
+    return Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,n);
+  }
+
+  const isOps=currentTopMode==='ops';
+  const unit=isOps?'pallet':'CBM';
+  const cats=isOps?[
+    {title:`🟢 IN — Top ${unit}`,data:topListOps('IN'),color:'var(--teal-m)'},
+    {title:`🔴 OUT — Top ${unit}`,data:topListOps('OUT'),color:'var(--coral-m)'},
+    {title:`📊 Total (IN+OUT)`,data:topListOpsTotal(),color:'var(--purple-m)'}
+  ]:[{title:'🟢 IN — Top CBM',data:topList('IN'),color:'var(--teal-m)'},{title:'🔴 OUT — Top CBM',data:topList('OUT'),color:'var(--coral-m)'},{title:'📊 Total (IN+OUT)',data:topListTotal(),color:'var(--purple-m)'}];
   document.getElementById('top-grid').innerHTML=cats.map(cat=>{
     const max=cat.data[0]?cat.data[0][1]:1;
     const rows=cat.data.map(([name,val],i)=>{
       const rankClass=i===0?'r1':i===1?'r2':i===2?'r3':'rn';
       const pct=Math.round(val/max*100);
-      return`<div class="top-row"><div class="top-rank ${rankClass}">${i+1}</div><div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;align-items:center"><span class="top-name">${name}</span><span class="top-val" style="color:${cat.color}">${val.toFixed(2)}</span></div><div class="top-bar"><div class="top-bar-fill" style="width:${pct}%;background:${cat.color}"></div></div></div></div>`;
+      return`<div class="top-row"><div class="top-rank ${rankClass}">${i+1}</div><div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;align-items:center"><span class="top-name">${name}</span><span class="top-val" style="color:${cat.color}">${isOps?val:val.toFixed(2)}</span></div><div class="top-bar"><div class="top-bar-fill" style="width:${pct}%;background:${cat.color}"></div></div></div></div>`;
     }).join('');
     return`<div class="top-card"><div class="top-title">${cat.title}</div>${rows||'<div style="color:var(--text3);font-size:12px">Không có dữ liệu</div>'}</div>`;
   }).join('');
@@ -1185,7 +1274,8 @@ async function fetchFromAPI() {
 
       const ex = db[pm];
       if (!ex) {
-        db[pm] = { it:inTally, ii:trimDt(inTallyTime), ot:outTally, oi:trimDt(outTallyTime), iu:inUser, id:trimDt(inDate), ou:outUser, od:trimDt(outDate), c:cbm, sp:supplier };
+        const numVal = parseFloat(r['Num'] || 0);
+      db[pm] = { it:inTally, ii:trimDt(inTallyTime), ot:outTally, oi:trimDt(outTallyTime), iu:inUser, id:trimDt(inDate), ou:outUser, od:trimDt(outDate), c:cbm, sp:supplier, nm:numVal };
         added++;
       } else {
         let ch=false;
@@ -1199,6 +1289,8 @@ async function fetchFromAPI() {
         if(!ex.ou&&!ex.outUser&&outUser){ex.ou=outUser;ch=true;}
         if(cbm&&cbm!==(ex.c||ex.cbm)){ex.c=cbm;ch=true;}
         if(!ex.sp&&supplier){ex.sp=supplier;ch=true;}
+      const numVal2 = parseFloat(r['Num'] || 0);
+      if(numVal2&&!ex.nm){ex.nm=numVal2;ch=true;}
         if(ch)updated++;else skipped++;
       }
     });
@@ -1214,6 +1306,130 @@ async function fetchFromAPI() {
     st.style.background='var(--coral-l)'; st.style.color='var(--coral)';
     st.textContent='❌ ' + err.message;
   }
+}
+
+// ── OPS REPORT ───────────────────────────────────────────────────────────────
+let currentOpsPeriod = 'day';
+let currentOpsRole = 'Tally';
+
+function switchOpsPeriod(p){
+  currentOpsPeriod=p;
+  document.querySelectorAll('#panel-ops .nav-tabs .ntab').forEach((b,i)=>b.classList.toggle('active',['day','week','month'][i]===p));
+  document.getElementById('ops-month').style.display=p==='day'?'':'none';
+  renderOpsAll();
+}
+function switchOpsRole(r){
+  currentOpsRole=r;
+  document.querySelectorAll('#panel-ops .stab').forEach((b,i)=>b.classList.toggle('active',['Tally','Forklift'][i]===r));
+  renderOpsAll();
+}
+function renderOpsAll(){
+  const year=parseInt(document.getElementById('ops-year').value);
+  const monthVal=document.getElementById('ops-month').value;
+  const month=monthVal==='all'?'all':parseInt(monthVal);
+  if(currentOpsPeriod==='day'){
+    const months=new Set();
+    Object.values(db).forEach(rec=>{[rec.ii||rec.inTallyTime,rec.oi||rec.outTallyTime,rec.id||rec.inDate,rec.od||rec.outDate].forEach(d=>{const pd=parseDate(d);if(pd&&pd.getFullYear()===year)months.add(pd.getMonth()+1);});});
+    const mNames=['','Tháng 1','Tháng 2','Tháng 3','Tháng 4','Tháng 5','Tháng 6','Tháng 7','Tháng 8','Tháng 9','Tháng 10','Tháng 11','Tháng 12'];
+    const ms=document.getElementById('ops-month');const cur=ms.value;
+    ms.innerHTML='<option value="all">Tất cả tháng</option>'+[...months].sort((a,b)=>a-b).map(m=>`<option value="${m}">${mNames[m]}</option>`).join('');
+    if([...months].map(String).includes(cur))ms.value=cur;
+  }
+  renderOpsTable(year,month);
+}
+
+function buildOpsEvents(yearFilter,monthFilter){
+  const events=[];
+  Object.entries(db).forEach(([pm,rec])=>{
+    // Lọc CBM = 0 (pallet không tồn tại thực)
+    const cbmVal=rec.c||rec.cbm||0;
+    if(!cbmVal||cbmVal===0)return;
+    const inTally=rec.it||rec.inTally,inTallyTime=rec.ii||rec.inTallyTime;
+    const outTally=rec.ot||rec.outTally,outTallyTime=rec.oi||rec.outTallyTime;
+    const inUser=rec.iu||rec.inUser,inDate=rec.id||rec.inDate;
+    const outUser=rec.ou||rec.outUser,outDate=rec.od||rec.outDate;
+    if(inTally&&inTallyTime){const d=parseDate(inTallyTime);if(d&&yearOk(d,yearFilter,monthFilter))events.push({date:d,type:'IN',role:'Tally',person:inTally,pm});}
+    if(outTally&&outTallyTime){const d=parseDate(outTallyTime);if(d&&yearOk(d,yearFilter,monthFilter))events.push({date:d,type:'OUT',role:'Tally',person:outTally,pm});}
+    if(inUser&&inDate){const d=parseDate(inDate);if(d&&yearOk(d,yearFilter,monthFilter))events.push({date:d,type:'IN',role:'Forklift',person:inUser,pm});}
+    if(outUser&&outDate){const d=parseDate(outDate);if(d&&yearOk(d,yearFilter,monthFilter))events.push({date:d,type:'OUT',role:'Forklift',person:outUser,pm});}
+  });
+  return events;
+}
+
+function renderOpsTable(year,month){
+  const events=buildOpsEvents(year,month).filter(e=>e.role===currentOpsRole);
+  if(!events.length){document.getElementById('ops-tbl').innerHTML='<div style="padding:40px;text-align:center;color:var(--text3)">Không có dữ liệu.</div>';return;}
+  const getPK=e=>currentOpsPeriod==='day'?dKey(e.date):currentOpsPeriod==='week'?wKey(e.date):mKey(e.date);
+  const pSet=new Set(events.map(getPK));
+  const periods=[...pSet].sort().map(k=>{
+    let label=k;
+    if(currentOpsPeriod==='day')label=k.slice(8)+'/'+k.slice(5,7);
+    else if(currentOpsPeriod==='week')label=k.replace('-W','·W');
+    else{const m=parseInt(k.slice(5));label='T'+m+'/'+k.slice(2,4);}
+    return{key:k,label};
+  });
+  // Count pallets per person per period
+  const agg={};
+  events.forEach(e=>{
+    if(!agg[e.person])agg[e.person]={};
+    const pk=getPK(e);
+    if(!agg[e.person][pk])agg[e.person][pk]={in:0,out:0};
+    if(e.type==='IN')agg[e.person][pk].in++;
+    else agg[e.person][pk].out++;
+  });
+  const persons=Object.keys(agg).sort();
+  let h=`<table><thead><tr><th rowspan="2" style="text-align:left;min-width:140px;background:var(--surface2)">Nhân viên</th>`;
+  periods.forEach(p=>{h+=`<th colspan="3" class="thp">${p.label}</th>`;});
+  h+=`<th colspan="3" class="ths">Tổng</th></tr><tr>`;
+  periods.forEach(()=>{h+=`<th class="thi">IN</th><th class="tho">OUT</th><th class="tht">Total</th>`;});
+  h+=`<th class="thi">IN</th><th class="tho">OUT</th><th class="tht">Total</th></tr></thead><tbody>`;
+  const grand={in:0,out:0};
+  persons.forEach(p=>{
+    const data=agg[p];let pi=0,po=0;
+    h+=`<tr><td class="nc">${p}</td>`;
+    periods.forEach(({key})=>{const d=data[key]||{in:0,out:0};
+      h+=`<td>${d.in>0?`<span class="ci">${d.in}</span>`:'<span class="ce">—</span>'}</td>`;
+      h+=`<td>${d.out>0?`<span class="co">${d.out}</span>`:'<span class="ce">—</span>'}</td>`;
+      h+=`<td>${(d.in+d.out)>0?`<span class="ct">${d.in+d.out}</span>`:'<span class="ce">—</span>'}</td>`;
+      pi+=d.in;po+=d.out;
+    });
+    h+=`<td><span class="ci">${pi||'—'}</span></td><td><span class="co">${po||'—'}</span></td><td><span class="ct">${pi+po||'—'}</span></td></tr>`;
+    grand.in+=pi;grand.out+=po;
+  });
+  h+=`<tr class="str"><td class="sc">Tổng ${currentOpsRole}</td>`;
+  periods.forEach(({key})=>{let si=0,so=0;persons.forEach(p=>{const d=(agg[p]||{})[key]||{in:0,out:0};si+=d.in;so+=d.out;});
+    h+=`<td>${fi(si)}</td><td>${fo(so)}</td><td>${ft(si+so)}</td>`;});
+  h+=`<td>${fi(grand.in)}</td><td>${fo(grand.out)}</td><td>${ft(grand.in+grand.out)}</td></tr>`;
+  h+=`<tr class="gtr"><td class="grc">TỔNG CỘNG</td>`;
+  periods.forEach(({key})=>{let gi=0,go=0;persons.forEach(p=>{const d=(agg[p]||{})[key]||{in:0,out:0};gi+=d.in;go+=d.out;});
+    h+=`<td>${gi>0?`<span class="gci">${gi}</span>`:'<span style="opacity:.4">—</span>'}</td><td>${go>0?`<span class="gco">${go}</span>`:'<span style="opacity:.4">—</span>'}</td><td>${(gi+go)>0?(gi+go):'—'}</td>`;});
+  h+=`<td><span class="gci">${grand.in}</span></td><td><span class="gco">${grand.out}</span></td><td>${grand.in+grand.out}</td></tr></tbody></table>`;
+  document.getElementById('ops-tbl').innerHTML=h;
+}
+
+function exportOpsExcel(){
+  const year=parseInt(document.getElementById('ops-year').value);
+  const wb=XLSX.utils.book_new();
+  ['day','week','month'].forEach(period=>{
+    ['Tally','Forklift'].forEach(role=>{
+      const sname=(period==='day'?'Ngày':period==='week'?'Tuần':'Tháng')+' - '+role;
+      const events=buildOpsEvents(year,'all').filter(e=>e.role===role);
+      const getPK=e=>period==='day'?dKey(e.date):period==='week'?wKey(e.date):mKey(e.date);
+      const pSet=new Set(events.map(getPK));
+      const periods=[...pSet].sort().map(k=>{let label=k;if(period==='day')label=k.slice(8)+'/'+k.slice(5,7);else if(period==='week')label=k;else label='Tháng '+parseInt(k.slice(5));return{key:k,label};});
+      const agg={};
+      events.forEach(e=>{if(!agg[e.person])agg[e.person]={};const pk=getPK(e);if(!agg[e.person][pk])agg[e.person][pk]={in:0,out:0};if(e.type==='IN')agg[e.person][pk].in++;else agg[e.person][pk].out++;});
+      const persons=Object.keys(agg).sort();
+      const rows=[];
+      const h1=['Nhân viên'];periods.forEach(p=>{h1.push(p.label,'','');});h1.push('Tổng','','');rows.push(h1);
+      const h2=[''];periods.forEach(()=>{h2.push('IN','OUT','Total');});h2.push('IN','OUT','Total');rows.push(h2);
+      const grand={in:0,out:0};
+      persons.forEach(p=>{const data=agg[p];const row=[p];let pi=0,po=0;periods.forEach(({key})=>{const d=data[key]||{in:0,out:0};row.push(d.in||'',d.out||'',d.in+d.out||'');pi+=d.in;po+=d.out;});row.push(pi,po,pi+po);rows.push(row);grand.in+=pi;grand.out+=po;});
+      const sr=[`Tổng ${role}`];periods.forEach(({key})=>{let si=0,so=0;persons.forEach(p=>{const d=(agg[p]||{})[key]||{in:0,out:0};si+=d.in;so+=d.out;});sr.push(si,so,si+so);});sr.push(grand.in,grand.out,grand.in+grand.out);rows.push(sr);
+      XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),sname);
+    });
+  });
+  XLSX.writeFile(wb,`TacNghiep_CFS_${year}.xlsx`);
 }
 
 function showStatus(type,msg){const s=document.getElementById('sbar');s.className='sbar '+type;s.innerHTML=`<div class="sdot"></div>${msg}`;s.classList.remove('hidden');}
