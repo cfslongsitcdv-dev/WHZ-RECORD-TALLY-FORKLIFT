@@ -781,27 +781,59 @@ async function parseGzipToDb(bytes) {
 // Keep old fetchData for compatibility
 async function fetchData() { await fetchDataByYear(); }
 
+async function compressToBlob(data) {
+  const json = JSON.stringify(data);
+  const enc = new TextEncoder().encode(json);
+  const cs = new CompressionStream('gzip');
+  const writer = cs.writable.getWriter();
+  const reader = cs.readable.getReader();
+  writer.write(enc); writer.close();
+  let chunks = [];
+  while(true) { const {done,value} = await reader.read(); if(done) break; chunks.push(value); }
+  const compressed = new Uint8Array(chunks.reduce((a,b)=>{const c=new Uint8Array(a.length+b.length);c.set(a);c.set(b,a.length);return c;},new Uint8Array(0)));
+  return new Blob([compressed], { type: 'application/gzip' });
+}
+
+function getYearsFromDb(dbObj) {
+  const years = new Set();
+  Object.values(dbObj).forEach(rec => {
+    ['ii','oi','id','od','inTallyTime','outTallyTime','inDate','outDate'].forEach(k => {
+      const d = rec[k];
+      if(d) { const y = parseInt(String(d).slice(0,4)); if(y>=2000&&y<=2100) years.add(y); }
+    });
+  });
+  return [...years].sort();
+}
+
 async function saveAndUpload() {
   if (!isAdmin) return;
   const btn = document.getElementById('btn-save');
   btn.textContent = '⏳ Đang lưu...'; btn.disabled = true;
   try {
-    const json = JSON.stringify({ db, savedAt: new Date().toISOString() });
-    const enc = new TextEncoder().encode(json);
-    const cs = new CompressionStream('gzip');
-    const writer = cs.writable.getWriter();
-    const reader = cs.readable.getReader();
-    writer.write(enc); writer.close();
-    let chunks = [];
-    while(true) { const {done,value} = await reader.read(); if(done) break; chunks.push(value); }
-    const compressed = new Uint8Array(chunks.reduce((a,b)=>{const c=new Uint8Array(a.length+b.length);c.set(a);c.set(b,a.length);return c;},new Uint8Array(0)));
-    const blob = new Blob([compressed], { type: 'application/gzip' });
-    const { error } = await sb.storage.from('cfs-data').upload('data.json.gz', blob, {
-      upsert: true, contentType: 'application/gzip'
-    });
-    if (error) throw new Error(error.message);
+    // Tách DB theo năm và upload từng file
+    const years = getYearsFromDb(db);
+    let uploadedFiles = [];
+    for(const year of years) {
+      // Lọc pallet thuộc năm này
+      const yearDb = {};
+      Object.entries(db).forEach(([pm, rec]) => {
+        const recYears = new Set();
+        ['ii','oi','id','od','inTallyTime','outTallyTime','inDate','outDate'].forEach(k => {
+          const d = rec[k];
+          if(d) { const y = parseInt(String(d).slice(0,4)); if(y>=2000&&y<=2100) recYears.add(y); }
+        });
+        if(recYears.has(year)) yearDb[pm] = rec;
+      });
+      const blob = await compressToBlob({ db: yearDb, savedAt: new Date().toISOString() });
+      const filename = `data_${year}.json.gz`;
+      const { error } = await sb.storage.from('cfs-data').upload(filename, blob, {
+        upsert: true, contentType: 'application/gzip'
+      });
+      if(error) throw new Error(`Upload ${filename}: ${error.message}`);
+      uploadedFiles.push(`${year}(${Object.keys(yearDb).length.toLocaleString()})`);
+    }
     btn.textContent = '💾 Lưu & Upload'; btn.disabled = false;
-    showStatus('ok', `✅ Đã upload lên Supabase — ${Object.keys(db).length.toLocaleString()} pallets`);
+    showStatus('ok', `✅ Đã upload: ${uploadedFiles.join(', ')} pallets`);
   } catch(err) {
     btn.textContent = '💾 Lưu & Upload'; btn.disabled = false;
     showStatus('err', '❌ Upload thất bại: ' + err.message);
